@@ -19,7 +19,7 @@ from tkinter.ttk import (Button, Checkbutton, Entry, Frame, Radiobutton,
                          Scrollbar, Spinbox, Treeview)
 from types import NoneType
 from webbrowser import open_new
-from aglib import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
+from agdat import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
 
