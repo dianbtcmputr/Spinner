@@ -3,21 +3,28 @@ from ctypes import windll
 from io import BytesIO
 from os import execl, system
 from os.path import splitext
+from pprint import pformat
 from random import choice, choices, shuffle
 from sys import executable
 from time import sleep
-from tkinter import (ALL, BOTH, E, END, EW, HORIZONTAL, LEFT, NS, NSEW, NW, VERTICAL, X, BooleanVar, Canvas, Event, IntVar, Label, Menu, StringVar,
-                     Tk, Toplevel, Variable)
+from tkinter import (BOTH, END, EW, HORIZONTAL, LEFT, NS, NSEW, NW, RIGHT,
+                     VERTICAL, W, BooleanVar, Canvas, DoubleVar, E, Event, IntVar,
+                     Label, Menu, StringVar, Tk, Toplevel, Variable, X)
 from tkinter.filedialog import askopenfilename
 from tkinter.messagebox import askokcancel, showerror, showinfo
-from tkinter.simpledialog import askinteger, askstring
-from tkinter.ttk import Button, Entry, Frame, Scrollbar, Treeview
+from tkinter.scrolledtext import ScrolledText
+from tkinter.simpledialog import askinteger
+from tkinter.ttk import (Button, Checkbutton, Entry, Frame, Radiobutton,
+                         Scrollbar, Spinbox, Treeview)
+from types import NoneType
 
-from agdat import AgDir, Join, LoadAgFileName, SaveAgFileName, CopyObj, SplitBy
+from agdat import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
 
-VERSION = "Spinner 1.2+24w03a"
+TYPENAMES = {"str": "字符串", "int": "整数", "float": "小数", "bool": "真/假", "NoneType": "空值"}
+
+VERSION = "Spinner 1.2+24w04a"
 tk = Tk()
 tk.title(VERSION)
 eng = Engine()
@@ -40,7 +47,9 @@ class EditWindow(Toplevel):
         self.tv = Treeview(self.tvf, show="headings", selectmode="browse", columns=(0, 1, 2), )
         self.tv.heading(0, text="名称")
         self.tv.heading(1, text="类型")
-        self.tv.heading(2, text="值")
+        self.tv.heading(2, text="值")  
+        self.tv.tag_configure("jishu", background=TREECOLOR)
+        self.tv.bind("<1>", lambda e: self.tv.selection_set(self.tv.identify_row(e.y)))
         self.tv.bind("<3>", self.right)
         self.tv.bind("<Double-1>", self.open)
         self.tv.grid(row=0, column=0, sticky=NSEW)
@@ -56,12 +65,15 @@ class EditWindow(Toplevel):
         self.goto("")
     
     def goto(self, path):
+        i = 0
         self.tv.delete(*self.tv.get_children())
         for x in sorted(self.lib.EnumDirs(path)):
-            self.tv.insert("", END, values=(x, "数据夹", "-"), iid=Join(path, x))
+            self.tv.insert("", END, values=(x, "数据夹", "-"), iid=Join(path, x), tags=("oushu" if (i // 2)*2 !=i else "jishu"))
+            i += 1
         for x in sorted(self.lib.EnumFiles(path)):
             val = self.lib.QueryValue(Join(path, x))
-            self.tv.insert("", END, values=(x, getdattype(val), repr(val)), iid=Join(path, x))
+            self.tv.insert("", END, values=(x, gettypename(val), repr(val)), iid=Join(path, x), tags=("oushu" if (i // 2)*2 !=i else "jishu"))
+            i += 1
         self.ety.delete(0, END)
         self.ety.insert(0, path)
         self.curr = path
@@ -75,6 +87,8 @@ class EditWindow(Toplevel):
     
     def refresh_tv(self):
         self.goto(self.curr)
+        #tree_color(self.tv)
+        #self.tv.update()
 
     def selecting(self):
         return self.tv.selection()[0]
@@ -88,19 +102,34 @@ class EditWindow(Toplevel):
         if self.lib.IsDir(sel):
             self.goto(sel)
             return
-        res = askstring("Spinner", "新值：", initialvalue=repr(self.lib.QueryValue(sel)), parent=self)
-        if res:
-            self.lib.SetValue(sel, eval(res))
+        #res = askstring("Spinner", "新值：", initialvalue=repr(self.lib.QueryValue(sel)), parent=self)
+        flag, res = ValueDialog.askvalue(self, self.lib.QueryValue(sel))
+        if flag:
+            self.lib.SetValue(sel, res)
             self.refresh_tv()
     
     def rename(self):
         "重命名"
         sel = self.selecting()
-        res = askstring("Spinner", "新名称：", parent=self, initialvalue=SplitBy(sel, -1))
-        if res:
-            self.lib.Rename(sel, res)
-            self.refresh_tv()
-    
+        x, y, w, h = self.tv.bbox(sel)
+        e = Entry(self.tv)
+        e.insert(0, SplitBy(sel, -1)[-1])
+        e.select_range(0, END)
+        e.focus_set()
+        flag = BooleanVar(value=False)
+        def rename_confirm(event):
+            res = e.get()
+            e.destroy()
+            if res:
+                self.lib.Rename(sel, res)
+                self.refresh_tv()
+            flag.set(True)
+
+        e.bind("<FocusOut>", rename_confirm)
+        e.bind("<Return>", rename_confirm)
+        e.place(x=x, y=y)
+        #res = askstring("Spinner", "新名称：", parent=self, initialvalue=SplitBy(sel, -1)[-1])
+        self.wait_variable(flag)
     def remove(self):
         "删除"
         sel = self.selecting()
@@ -152,19 +181,120 @@ class EditWindow(Toplevel):
                 id += 1
     
     def right(self, e: Event):
-        sel = self.selecting()
+        self.tv.selection_set(self.tv.identify_row(e.y))
+        try:
+            sel = self.selecting()
+            items = [self.open, self.rename, self.newdir, self.newfile, self.remove]
+            if self.lib.IsDir(sel):
+                items.extend([self.import_, self.cleardir])
+        except:
+            items = [self.newdir, self.newfile]
         menu = Menu(self, tearoff=0)
-        items = [self.open, self.rename, self.newdir, self.newfile, self.remove]
-        if self.lib.IsDir(sel):
-            items.extend([self.import_, self.cleardir])
-        #else:
-        #    items.extend([self.readf])
         for i in items:
             menu.add_command(label=i.__doc__, command=i)
         menu.post(e.x_root, e.y_root)
 
-def getdattype(dat):
-    return type(dat).__name__
+def gettypename(dat) -> str:
+    return TYPENAMES.get(type(dat).__name__, "其他")
+
+def name2type(name):
+    for k, v in TYPENAMES.items():
+        if name == v:
+            return eval(k)
+    else:
+        return None
+class ValueDialog(Toplevel):
+    def __init__(self, parent: Toplevel, val):
+        Toplevel.__init__(self, parent)
+        self.parent = parent
+        self.transient(parent)
+        self.geometry(f"{DIALOGW}x{DIALOGH}+{parent.winfo_x()}+{parent.winfo_y()}")
+        self.title("Spinner")
+        self.focus_set()
+        self.typv = StringVar(value=gettypename(val))
+        valf = Frame(self)
+        for i, t in enumerate(["str", 0, 0.0, True, None, ()]):
+            Radiobutton(valf, text=gettypename(t), variable=self.typv, value=gettypename(t)).grid(row=i, column=0, sticky=W, **PAD)
+        
+        self.strtxt = ScrolledText(valf, height=5)
+        self.strtxt.insert(0.0, DEFAULTSTR)
+        self.strtxt.grid(row=0, column=1, sticky=NSEW, **PAD)
+
+        self.intv = IntVar(value=DEFAULTINT)
+        Spinbox(valf, textvariable=self.intv, increment=INTINCREMENT, from_=VALUEMIN, to=VALUEMAX).grid(row=1, column=1, sticky=EW, **PAD)
+
+        self.floatv = DoubleVar(value=DEFAULTFLOAT)
+        Spinbox(valf, textvariable=self.floatv, increment=FLOATINCREMENT, from_=VALUEMIN, to=VALUEMAX).grid(row=2, column=1, sticky=EW, **PAD)
+
+        self.boolv = BooleanVar(value=DEFAULTBOOL)
+        Checkbutton(valf, variable=self.boolv, onvalue=True).grid(row=3, column=1, sticky=EW, **PAD)
+
+        self.othrtxt = ScrolledText(valf, height=5)
+        self.othrtxt.insert(0.0, pformat(DEFAULTOTHR))
+        self.othrtxt.grid(row=5, column=1, sticky=NSEW, **PAD)
+        
+        valf.grid_columnconfigure(1, weight=1)
+        valf.grid_rowconfigure(0, weight=1)
+        valf.grid_rowconfigure(5, weight=1)
+        valf.pack(fill=BOTH, expand=1)
+        btnbox = Frame(self)
+        Button(btnbox, text="确定", command=self.ok).pack(side=RIGHT, **PAD)
+        Button(btnbox, text="取消", command=self.cancel).pack(side=RIGHT, **PAD)
+        btnbox.pack(fill=X)
+        self.setv(val)
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+    def ok(self):
+        self.val = self.getval()
+        self.flag = True
+        self.destroy()
+    
+    def cancel(self):
+        self.val = self.getval()
+        self.flag = False
+        self.destroy()
+    
+    def wait(self):
+        self.parent.wait_window(self)
+        return self.flag, self.val
+    
+    def getval(self):
+        t = name2type(self.typv.get())
+        if t == str:
+            return self.strtxt.get(0.0, END).strip("\n")
+        elif t == int:
+            return self.intv.get()
+        elif t == float:
+            return self.floatv.get()
+        elif t == bool:
+            return self.boolv.get()
+        elif t == NoneType:
+            return None
+        else:
+            return eval(self.othrtxt.get(0.0, END).strip("\n"))
+    
+    @classmethod
+    def askvalue(cls, parent, val):
+        dlg = ValueDialog(parent, val)
+        return dlg.wait()
+    
+    def setv(self, val):
+        t = type(val)
+        self.typv.set(gettypename(val))
+        if t == str:
+            self.strtxt.delete(0.0, END)
+            self.strtxt.insert(0.0, val)
+        elif t == int:
+            self.intv.set(val)
+        elif t == float:
+            self.floatv.set(val)
+        elif t == bool:
+            self.boolv.set(val)
+        elif t == NoneType:
+            pass
+        else:
+            self.othrtxt.delete(0.0, END)
+            self.othrtxt.insert(0.0, pformat(val))
 
 cnflib = LoadAgFileName("config.aglib")
 assetslib = LoadAgFileName("assets.aglib")
@@ -180,6 +310,7 @@ COMBINES = cnflib.GetSubDirCopy("HKEY_COMBINES")
 NAMEDICT = cnflib.GetSubDirCopy("HKEY_NAMES")
 TOOLS = cnflib.GetSubDirCopy("HKEY_TOOLS")
 VOICETIP = cnflib.GetSubDirCopy("HKEY_VOICE_TIP")
+EDTRLIB = cnflib.GetSubDirCopy("HKEY_EDITOR")
 
 SCALE = SYSCNF.QueryValue("scale")
 MEMBERS = list(range(SYSCNF.QueryValue("min"), SYSCNF.QueryValue("max") + 1))
@@ -191,18 +322,31 @@ for x in range(10):
     shuffle(MEMBERS)
 
 PAD = SYSCNF.QueryValue("pad")
-W, H = int(256 * SCALE), int(208 * SCALE)
+WW, WH = int(256 * SCALE), int(208 * SCALE)
 SW, SH = tk.winfo_screenwidth(), tk.winfo_screenheight()
+
 REPEATTIMES = SYSCNF.QueryValue("repeatTimes")
 ALPHA = SYSCNF.QueryValue("alpha")
 DEFAULTTEXTURE = SYSCNF.QueryValue("defaultTexture")
-EDITORFONT = SYSCNF.QueryValue("editorFont")
 DELTAY = SYSCNF.QueryValue("deltaY")
 VOICEPROMPT = SYSCNF.QueryValue("voicePrompt")
 DOTRICKS = SYSCNF.QueryValue("doTricks")
-EDITORW, EDITORH = SYSCNF.QueryValue("editorWH")
 VOICETIPMARK = SYSCNF.QueryValue("voiceTipMark")
 LOADWINSIZE = SYSCNF.QueryValue("loadWinSize")
+
+EDITORW, EDITORH = EDTRLIB.QueryValue("editorWH")
+DIALOGW, DIALOGH = EDTRLIB.QueryValue("dialogWH")
+DEFAULTSTR = EDTRLIB.QueryValue("defaultStr")
+DEFAULTINT = EDTRLIB.QueryValue("defaultInt")
+DEFAULTFLOAT = EDTRLIB.QueryValue("defaultFloat")
+DEFAULTBOOL = EDTRLIB.QueryValue("defaultBool")
+DEFAULTOTHR = EDTRLIB.QueryValue("defaultOthr")
+EDITORFONT = EDTRLIB.QueryValue("editorFont")
+INTINCREMENT = EDTRLIB.QueryValue("intIncrement")
+FLOATINCREMENT = EDTRLIB.QueryValue("floatIncrement")
+VALUEMIN = EDTRLIB.QueryValue("valueMin")
+VALUEMAX = EDTRLIB.QueryValue("valueMax")
+TREECOLOR = EDTRLIB.QueryValue("treeColor")
 
 eng.setProperty("volume", SYSCNF.QueryValue("aiVolume"))
 eng.setProperty("rate", SYSCNF.QueryValue("aiRate"))
@@ -266,7 +410,7 @@ def set_top_geometry(geo, hidding=False):
     now_geo.set(geo)
     top.geometry(geo)
 
-set_top_geometry(f"{W}x{H}+{int(SW/2 - W/2)}+{int(SH/2 - H/2)+DELTAY}")
+set_top_geometry(f"{WW}x{WH}+{int(SW/2 - WW/2)}+{int(SH/2 - WH/2)+DELTAY}")
 top.attributes("-alpha", 0)
 
 def randtexture(*e):
@@ -279,7 +423,7 @@ def winclose():
         top.attributes("-alpha", 1)
 
     else:
-        set_top_geometry(f"{W}x{H}-{SW-30}+{top.winfo_y()}")
+        set_top_geometry(f"{WW}x{WH}-{SW-30}+{top.winfo_y()}")
         now_geo.set("hidden")
         top.attributes("-alpha", ALPHA)
 
@@ -375,18 +519,24 @@ def add_trick_items(menu: Menu, labl, content:list):
     subm = Menu(menu, tearoff=0)
     for c in content:
         number = str(c) + (VOICETIPMARK if str(c) in VOICETIP.EnumFiles() else "")
-        subm.add_command(label=number, command=lambda who=c:nextone.set(who), accelerator=NAMEDICT.QueryValue(str(c)))
+        subm.add_command(label=number, command=lambda who=c:nextone.set(who), accelerator=NAMEDICT.TryQueryValue(str(c)))
     menu.add_cascade(label=labl, menu=subm)
 
 def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.2+24w03a 更新==
-    1. 删除了窗口图标
-    2. 增加了配置编辑器
-    3. 修复了调大加载窗口会导致进度走不到终点bug"""
+    """==Spinner 1.2+24w04a 更新==
+    1. 修复了学号姓名字典不全会导致崩溃bug
+    2. 配置编辑器中重命名改为了类似于资源管理器的样式
+    3. 配置编辑器有了自己的取值对话框
+    4. 配置编辑器的树视图有了隔行变色
+    5. 添加了制作者名单"""
     showinfo("Spinner", show_log.__doc__, parent=top)
+
+def contributors():
+    """李喆祎（糖衣2023级老5班新1班电表）"""
+    showinfo("Spinner", contributors.__doc__, parent=top)
 
 tric = Menu(menubar, tearoff=0)
 subs = {}
@@ -407,13 +557,14 @@ else:
 edit = Menu(menubar, tearoff=0)
 edit.add_command(label="打开编辑器", command=lambda:EditWindow(cnflib))
 edit.add_command(label="重新启动", command=restart)
+edit.add_separator()
+edit.add_command(label="更新日志", command=show_log)
+edit.add_command(label="制作者名单", command=contributors)
 menubar.add_cascade(label="配置", menu=edit)
 
 too = Menu(menubar, tearoff=0)
 for k in TOOLS.EnumFiles():
     too.add_command(label=k, command=lambda v=TOOLS.QueryValue(k): start_tool(v))
-too.add_separator()
-too.add_command(label="更新日志", command=show_log)
 menubar.add_cascade(label="工具", menu=too)
 
 top.config(menu=menubar)
