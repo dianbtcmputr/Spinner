@@ -1,9 +1,1 @@
-{"Redstone Lamp":["redstone_lamp_on", "redstone_lamp"],
- "Copper Bulb":["copper_bulb_lit", "copper_bulb"],
- "Copper Block":["copper_block", "oxidized_copper"],
- "Bamboo Block":["stripped_bamboo_block", "bamboo_block"],
- "Diamond Ore":["diamond_ore", "stone"],
- "Deepslate Diamond":["deepslate_diamond_ore", "deepslate"],
- "Quartz Ore":["nether_quartz_ore", "netherrack"],
- "Wool":["black_wool", "white_wool"],
- "Furnace":["furnace_front_on", "furnace_front"]}
+{"\u7ea2\u77f3\u706f": ["redstone_lamp_on", "redstone_lamp"], "\u94dc\u706f": ["copper_bulb_lit", "copper_bulb"], "\u94dc\u5757": ["copper_block", "oxidized_copper"], "\u7af9\u5757": ["stripped_bamboo_block", "bamboo_block"], "\u94bb\u77f3\u77ff": ["diamond_ore", "stone"], "\u6df1\u5c42\u94bb\u77f3\u77ff": ["deepslate_diamond_ore", "deepslate"], "\u77f3\u82f1\u77ff": ["nether_quartz_ore", "netherrack"], "\u9ed1\u767d\u7f8a\u6bdb": ["black_wool", "white_wool"], "\u7194\u7089": ["furnace_front_on", "furnace_front"]}
