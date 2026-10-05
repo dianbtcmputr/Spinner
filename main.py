@@ -1,13 +1,13 @@
 from _thread import start_new_thread
 from ctypes import windll
 from io import BytesIO
-from os import execl, system
+from os import execl, startfile, system
 from os.path import splitext
 from pprint import pformat
 from random import choice, choices, shuffle
-from sys import executable
+from sys import executable, getdefaultencoding
 from time import sleep
-from tkinter import (BOTH, END, EW, HORIZONTAL, LEFT, NS, NSEW, NW, RIGHT,
+from tkinter import (BOTH, DISABLED, END, EW, HORIZONTAL, LEFT, NS, NSEW, NW, RIGHT,
                      VERTICAL, W, BooleanVar, Canvas, DoubleVar, E, Event, IntVar,
                      Label, Menu, StringVar, Tk, Toplevel, Variable, X)
 from tkinter.filedialog import askopenfilename
@@ -17,14 +17,15 @@ from tkinter.simpledialog import askinteger
 from tkinter.ttk import (Button, Checkbutton, Entry, Frame, Radiobutton,
                          Scrollbar, Spinbox, Treeview)
 from types import NoneType
-
+from webbrowser import open_new
 from agdat import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
+#from windnd import hook_dropfiles
 
 TYPENAMES = {"str": "字符串", "int": "整数", "float": "小数", "bool": "真/假", "NoneType": "空值"}
 
-VERSION = "Spinner 1.2+24w04a"
+VERSION = "Spinner 1.3"
 tk = Tk()
 tk.title(VERSION)
 eng = Engine()
@@ -38,7 +39,7 @@ class EditWindow(Toplevel):
         self.geometry(f"{EDITORW}x{EDITORH}+{top.winfo_x()}+{top.winfo_y()}")
         self.pathf = Frame(self)
         Button(self.pathf, text="<", command=self.return_).pack(side=LEFT, **PAD)
-        self.ety = Entry(self.pathf)
+        self.ety = Entry(self.pathf, font=EDITORFONT)
         self.ety.bind("<Return>", self.gobyety)
         self.ety.pack(side=LEFT, expand=1, fill=X, **PAD)
         Button(self.pathf, text="->", command=self.gobyety).pack(side=LEFT, **PAD)
@@ -47,8 +48,9 @@ class EditWindow(Toplevel):
         self.tv = Treeview(self.tvf, show="headings", selectmode="browse", columns=(0, 1, 2), )
         self.tv.heading(0, text="名称")
         self.tv.heading(1, text="类型")
-        self.tv.heading(2, text="值")  
-        self.tv.tag_configure("jishu", background=TREECOLOR)
+        self.tv.heading(2, text="值")
+        self.tv.tag_configure("oushu", background=TREECOLOREVEN, font=EDITORFONT)
+        self.tv.tag_configure("jishu", background=TREECOLORODD, font=EDITORFONT)
         self.tv.bind("<1>", lambda e: self.tv.selection_set(self.tv.identify_row(e.y)))
         self.tv.bind("<3>", self.right)
         self.tv.bind("<Double-1>", self.open)
@@ -61,18 +63,26 @@ class EditWindow(Toplevel):
         self.tvf.grid_columnconfigure(0, weight=1)
         self.tvf.grid_rowconfigure(0, weight=1)
         self.tvf.pack(fill=BOTH, expand=1, **PAD)
+        #hook_dropfiles(self.tv, func=self.dropfile)
         Button(self, text="保存", command=self.save).pack(anchor=E, **PAD)
         self.goto("")
-    
+    """
+    def dropfile(self, files):
+        fs = [f.decode(getdefaultencoding()) for f in files]
+        #print(fs)
+        for fn in fs:
+            with open(fn, "rb") as f:
+                self.lib.SetValue(Join(self.curr, fn), f.read())"""
+
     def goto(self, path):
         i = 0
         self.tv.delete(*self.tv.get_children())
         for x in sorted(self.lib.EnumDirs(path)):
-            self.tv.insert("", END, values=(x, "数据夹", "-"), iid=Join(path, x), tags=("oushu" if (i // 2)*2 !=i else "jishu"))
+            self.tv.insert("", END, values=(x, "数据夹", "-"), iid=Join(path, x), tags=("jishu" if (i // 2)*2 !=i else "oushu"))
             i += 1
         for x in sorted(self.lib.EnumFiles(path)):
             val = self.lib.QueryValue(Join(path, x))
-            self.tv.insert("", END, values=(x, gettypename(val), repr(val)), iid=Join(path, x), tags=("oushu" if (i // 2)*2 !=i else "jishu"))
+            self.tv.insert("", END, values=(x, gettypename(val), repr(val)), iid=Join(path, x), tags=("jishu" if (i // 2)*2 !=i else "oushu"))
             i += 1
         self.ety.delete(0, END)
         self.ety.insert(0, path)
@@ -111,8 +121,8 @@ class EditWindow(Toplevel):
     def rename(self):
         "重命名"
         sel = self.selecting()
-        x, y, w, h = self.tv.bbox(sel)
-        e = Entry(self.tv)
+        x, y, w, h = self.tv.bbox(sel, 0)
+        e = Entry(self.tv, font=EDITORFONT)
         e.insert(0, SplitBy(sel, -1)[-1])
         e.select_range(0, END)
         e.focus_set()
@@ -127,7 +137,7 @@ class EditWindow(Toplevel):
 
         e.bind("<FocusOut>", rename_confirm)
         e.bind("<Return>", rename_confirm)
-        e.place(x=x, y=y)
+        e.place(x=x, y=y, width=w, height=h)
         #res = askstring("Spinner", "新名称：", parent=self, initialvalue=SplitBy(sel, -1)[-1])
         self.wait_variable(flag)
     def remove(self):
@@ -216,20 +226,20 @@ class ValueDialog(Toplevel):
         for i, t in enumerate(["str", 0, 0.0, True, None, ()]):
             Radiobutton(valf, text=gettypename(t), variable=self.typv, value=gettypename(t)).grid(row=i, column=0, sticky=W, **PAD)
         
-        self.strtxt = ScrolledText(valf, height=5)
+        self.strtxt = ScrolledText(valf, height=5, font=EDITORFONT)
         self.strtxt.insert(0.0, DEFAULTSTR)
         self.strtxt.grid(row=0, column=1, sticky=NSEW, **PAD)
 
         self.intv = IntVar(value=DEFAULTINT)
-        Spinbox(valf, textvariable=self.intv, increment=INTINCREMENT, from_=VALUEMIN, to=VALUEMAX).grid(row=1, column=1, sticky=EW, **PAD)
+        Spinbox(valf, textvariable=self.intv, increment=INTINCREMENT, from_=VALUEMIN, to=VALUEMAX, font=EDITORFONT).grid(row=1, column=1, sticky=EW, **PAD)
 
         self.floatv = DoubleVar(value=DEFAULTFLOAT)
-        Spinbox(valf, textvariable=self.floatv, increment=FLOATINCREMENT, from_=VALUEMIN, to=VALUEMAX).grid(row=2, column=1, sticky=EW, **PAD)
+        Spinbox(valf, textvariable=self.floatv, increment=FLOATINCREMENT, from_=VALUEMIN, to=VALUEMAX, font=EDITORFONT).grid(row=2, column=1, sticky=EW, **PAD)
 
         self.boolv = BooleanVar(value=DEFAULTBOOL)
         Checkbutton(valf, variable=self.boolv, onvalue=True).grid(row=3, column=1, sticky=EW, **PAD)
 
-        self.othrtxt = ScrolledText(valf, height=5)
+        self.othrtxt = ScrolledText(valf, height=5, font=EDITORFONT)
         self.othrtxt.insert(0.0, pformat(DEFAULTOTHR))
         self.othrtxt.grid(row=5, column=1, sticky=NSEW, **PAD)
         
@@ -346,7 +356,8 @@ INTINCREMENT = EDTRLIB.QueryValue("intIncrement")
 FLOATINCREMENT = EDTRLIB.QueryValue("floatIncrement")
 VALUEMIN = EDTRLIB.QueryValue("valueMin")
 VALUEMAX = EDTRLIB.QueryValue("valueMax")
-TREECOLOR = EDTRLIB.QueryValue("treeColor")
+TREECOLORODD = EDTRLIB.QueryValue("treeColorOdd")
+TREECOLOREVEN = EDTRLIB.QueryValue("treeColorEven")
 
 eng.setProperty("volume", SYSCNF.QueryValue("aiVolume"))
 eng.setProperty("rate", SYSCNF.QueryValue("aiRate"))
@@ -504,8 +515,17 @@ def focus():
     else:
         top.focus_set()
 
-def start_tool(t):
+def start_systm(t):
     start_new_thread(system, (t,))
+
+def start_exe(t):
+    start_new_thread(startfile, (t,))
+
+def start_py(t):
+    start_new_thread(exec, (t,))
+
+def start_url(t):
+    start_new_thread(open_new, (t,))
 
 menubar = Menu(top)
 comb = Menu(menubar, tearoff=0)
@@ -526,12 +546,11 @@ def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.2+24w04a 更新==
-    1. 修复了学号姓名字典不全会导致崩溃bug
-    2. 配置编辑器中重命名改为了类似于资源管理器的样式
-    3. 配置编辑器有了自己的取值对话框
-    4. 配置编辑器的树视图有了隔行变色
-    5. 添加了制作者名单"""
+    """==Spinner 1.3 更新==
+    1. 修复了编辑器字体设置无效bug
+    2. 配置编辑器隔行变色奇偶色现在都可设
+    3. 添加了退出按钮
+    4. 更新了工具栏相关设置"""
     showinfo("Spinner", show_log.__doc__, parent=top)
 
 def contributors():
@@ -557,16 +576,35 @@ else:
 edit = Menu(menubar, tearoff=0)
 edit.add_command(label="打开编辑器", command=lambda:EditWindow(cnflib))
 edit.add_command(label="重新启动", command=restart)
+edit.add_command(label="退出", command=tk.destroy)
 edit.add_separator()
 edit.add_command(label="更新日志", command=show_log)
 edit.add_command(label="制作者名单", command=contributors)
 menubar.add_cascade(label="配置", menu=edit)
 
 too = Menu(menubar, tearoff=0)
-for k in TOOLS.EnumFiles():
-    too.add_command(label=k, command=lambda v=TOOLS.QueryValue(k): start_tool(v))
+def genmenu(pmenu: Menu, path: str):
+    lb = TOOLS.TryQueryValue(Join(path, "label"), SplitBy(path, -1)[-1])
+    cmd = TOOLS.TryQueryValue(Join(path, "command"), int)
+    cmd_t = TOOLS.TryQueryValue(Join(path, "commandType"), None)
+    if not cmd_t:
+        pmenu.add_command(label=lb, state=DISABLED)
+    elif cmd_t == "subCommands":
+        m = Menu(pmenu, tearoff=0)
+        for x in sorted(TOOLS.EnumDirs(path)):
+            genmenu(m, Join(path, x))
+        pmenu.add_cascade(menu=m, label=lb)
+    elif cmd_t == "system":
+        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_systm(cmd))
+    elif cmd_t == "startFile":
+        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_exe(cmd))
+    elif cmd_t == "pyExec":
+        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_py(cmd))
+    elif cmd_t == "openUrl":
+        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_url(cmd))
+for x in sorted(TOOLS.EnumDirs()):
+    genmenu(too, x)
 menubar.add_cascade(label="工具", menu=too)
-
 top.config(menu=menubar)
 
 init()
