@@ -5,9 +5,10 @@ from os import execl, startfile, system
 from os.path import splitext
 from pprint import pformat
 from random import choice, choices, shuffle
-from sys import executable, getdefaultencoding
+from re import findall
+from sys import executable
 from time import sleep
-from tkinter import (BOTH, DISABLED, END, EW, HORIZONTAL, LEFT, NS, NSEW, NW, RIGHT,
+from tkinter import (BOTH, DISABLED, END, EW, LEFT, NS, NSEW, NW, RIGHT,
                      VERTICAL, W, BooleanVar, Canvas, DoubleVar, E, Event, IntVar,
                      Label, Menu, StringVar, Tk, Toplevel, Variable, X)
 from tkinter.filedialog import askopenfilename
@@ -18,22 +19,28 @@ from tkinter.ttk import (Button, Checkbutton, Entry, Frame, Radiobutton,
                          Scrollbar, Spinbox, Treeview)
 from types import NoneType
 from webbrowser import open_new
-from agdat import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
+from aglib import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
-#from windnd import hook_dropfiles
 
 TYPENAMES = {"str": "字符串", "int": "整数", "float": "小数", "bool": "真/假", "NoneType": "空值"}
 
-VERSION = "Spinner 1.3"
+VERSION = "Spinner 1.3.1"
 tk = Tk()
 tk.title(VERSION)
 eng = Engine()
+"""
+helpdict = {"HKEY_SYSTEM": "存储有关系统设置的值"}"""
 
-class EditWindow(Toplevel):
+class FocusToplevel(Toplevel):
+    def __init__(self, *args, **kw):
+        Toplevel.__init__(self, *args, **kw)
+        self.focus_set()
+
+class EditWindow(FocusToplevel):
     def __init__(self, lib: AgDir):
-        self.lib = CopyObj(lib)
-        Toplevel.__init__(self)
+        self.lib = lib
+        FocusToplevel.__init__(self)
         self.title("Spinner")
         self.transient(top)
         self.geometry(f"{EDITORW}x{EDITORH}+{top.winfo_x()}+{top.winfo_y()}")
@@ -49,30 +56,29 @@ class EditWindow(Toplevel):
         self.tv.heading(0, text="名称")
         self.tv.heading(1, text="类型")
         self.tv.heading(2, text="值")
-        self.tv.tag_configure("oushu", background=TREECOLOREVEN, font=EDITORFONT)
-        self.tv.tag_configure("jishu", background=TREECOLORODD, font=EDITORFONT)
+        self.tv.tag_configure("oushu", background=TREECOLORODD, font=EDITORFONT)
+        self.tv.tag_configure("jishu", background=TREECOLOREVEN, font=EDITORFONT)
         self.tv.bind("<1>", lambda e: self.tv.selection_set(self.tv.identify_row(e.y)))
         self.tv.bind("<3>", self.right)
         self.tv.bind("<Double-1>", self.open)
         self.tv.grid(row=0, column=0, sticky=NSEW)
         self.vbar = Scrollbar(self.tvf, command=self.tv.yview, orient=VERTICAL)
         self.vbar.grid(row=0, column=1, sticky=NS)
-        self.hbar = Scrollbar(self.tvf, command=self.tv.xview, orient=HORIZONTAL)
-        self.hbar.grid(row=1, column=0, sticky=EW)
-        self.tv.config(xscrollcommand=self.hbar.set, yscrollcommand=self.vbar.set)
+        self.tv.config(yscrollcommand=self.vbar.set)
         self.tvf.grid_columnconfigure(0, weight=1)
         self.tvf.grid_rowconfigure(0, weight=1)
         self.tvf.pack(fill=BOTH, expand=1, **PAD)
-        #hook_dropfiles(self.tv, func=self.dropfile)
         Button(self, text="保存", command=self.save).pack(anchor=E, **PAD)
         self.goto("")
     """
-    def dropfile(self, files):
-        fs = [f.decode(getdefaultencoding()) for f in files]
-        #print(fs)
-        for fn in fs:
-            with open(fn, "rb") as f:
-                self.lib.SetValue(Join(self.curr, fn), f.read())"""
+    def gethelp(self):
+        for k, v in helpdict.items():
+            path = self.selecting() if self.tv.selection() else self.curr
+            if findall(k, path):
+                showinfo("Spinner", f"关于{path}的帮助：\n    {v}", parent=self)
+                break
+        else:
+            showinfo("Spinner", "未找到对应的帮助文档", parent=self)"""
 
     def goto(self, path):
         i = 0
@@ -202,6 +208,8 @@ class EditWindow(Toplevel):
         menu = Menu(self, tearoff=0)
         for i in items:
             menu.add_command(label=i.__doc__, command=i)
+        #menu.add_separator()
+        #menu.add_command(label="帮助", command=self.gethelp)
         menu.post(e.x_root, e.y_root)
 
 def gettypename(dat) -> str:
@@ -213,14 +221,13 @@ def name2type(name):
             return eval(k)
     else:
         return None
-class ValueDialog(Toplevel):
+class ValueDialog(FocusToplevel):
     def __init__(self, parent: Toplevel, val):
-        Toplevel.__init__(self, parent)
+        FocusToplevel.__init__(self, parent)
         self.parent = parent
         self.transient(parent)
         self.geometry(f"{DIALOGW}x{DIALOGH}+{parent.winfo_x()}+{parent.winfo_y()}")
         self.title("Spinner")
-        self.focus_set()
         self.typv = StringVar(value=gettypename(val))
         valf = Frame(self)
         for i, t in enumerate(["str", 0, 0.0, True, None, ()]):
@@ -546,11 +553,11 @@ def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.3 更新==
-    1. 修复了编辑器字体设置无效bug
-    2. 配置编辑器隔行变色奇偶色现在都可设
-    3. 添加了退出按钮
-    4. 更新了工具栏相关设置"""
+    """==Spinner 1.3.1 更新==
+    1. 修复了编辑器树视图颜色反了bug
+    2. 修复了在加载结束时关掉资源管理器会导致Spinner窗口不出现的bug
+    3. 去掉了编辑器的水平卷动条
+    4. 现在第二次打开编辑器会回到第一次的状态"""
     showinfo("Spinner", show_log.__doc__, parent=top)
 
 def contributors():
@@ -612,7 +619,7 @@ cvs.bind("<1>", update)
 top.after(0, focus)
 top.attributes("-topmost", 1)
 top.resizable(0, 0)
-
+top.deiconify()
 windll.user32.SetFocus(top.winfo_id())
 for t in range(100):
     top.attributes("-alpha", top.attributes("-alpha")+0.01)
