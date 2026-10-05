@@ -1,17 +1,18 @@
 from _thread import start_new_thread
 from ctypes import windll
 from io import BytesIO
-from os import execl, startfile, system
-from os.path import splitext
+from os import execl, listdir, startfile, system
+from os.path import splitext, join
 from pprint import pformat
 from random import choice, choices, shuffle
-from re import findall
+from re import findall, match
 from sys import executable
-from time import sleep
+import sys
+from time import sleep, time
 from tkinter import (BOTH, DISABLED, END, EW, LEFT, NS, NSEW, NW, RIGHT,
-                     VERTICAL, W, BooleanVar, Canvas, DoubleVar, E, Event, IntVar,
-                     Label, Menu, StringVar, Tk, Toplevel, Variable, X)
-from tkinter.filedialog import askopenfilename
+                     VERTICAL, BooleanVar, Canvas, DoubleVar, E, Event, IntVar,
+                     Label, Menu, StringVar, Tk, Toplevel, Variable, W, X)
+from tkinter.filedialog import askopenfilename, askopenfilenames, asksaveasfilename
 from tkinter.messagebox import askokcancel, showerror, showinfo
 from tkinter.scrolledtext import ScrolledText
 from tkinter.simpledialog import askinteger
@@ -19,18 +20,104 @@ from tkinter.ttk import (Button, Checkbutton, Entry, Frame, Radiobutton,
                          Scrollbar, Spinbox, Treeview)
 from types import NoneType
 from webbrowser import open_new
-from agdat import AgDir, CopyObj, Join, LoadAgFileName, SaveAgFileName, SplitBy
+from zipimport import zipimporter
+
+from agdat import AgDir, Join, LoadAgFileName, SaveAgFileName, SplitBy
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
 
-TYPENAMES = {"str": "字符串", "int": "整数", "float": "小数", "bool": "真/假", "NoneType": "空值"}
+import sorge
 
-VERSION = "Spinner 1.3.1"
+TYPENAMES = {"str": "字符串", "int": "整数", "float": "小数", "bool": "真/假", "NoneType": "空值"}
+VERSION = "Spinner 1.3.1+24w05a"
+VER_ID = 1
 tk = Tk()
 tk.title(VERSION)
 eng = Engine()
+
+helpdict = {r"HKEY_SYSTEM": "存储有关系统设置的值",
+            r"HKEY_SYSTEM\aiRate": "整数，控制语音合成的语速",
+            r"HKEY_SYSTEM\aiVolume": "0~1的小数，控制语音合成的音量",
+            r"HKEY_SYSTEM\alpha": "0~1的小数，控制",
+            r"HKEY_SYSTEM\blackNames": "",
+            r"HKEY_SYSTEM\blackWeight": "",
+            r"HKEY_SYSTEM\defaultTexture": "",
+            r"HKEY_SYSTEM\deltaY": "",
+            r"HKEY_SYSTEM\doTricks": "",
+            r"HKEY_SYSTEM\loadWinSize": "",
+            r"HKEY_SYSTEM\max": "",
+            r"HKEY_SYSTEM\min": "",
+            r"HKEY_SYSTEM\pad": "",
+            r"HKEY_SYSTEM\repeatTimes": "",
+            r"HKEY_SYSTEM\scale": "",
+            r"HKEY_SYSTEM\voiceTipMark": "",
+            r"HKEY_SYSTEM\voicePrompt": "",
+            r"HKEY_SYSTEM\whiteNames": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",
+            r"": "",}
 """
-helpdict = {"HKEY_SYSTEM": "存储有关系统设置的值"}"""
+class Narration(Toplevel):
+    def __init__(self, info:str):
+        Toplevel.__init__(self, top)
+        self.transient(top)
+        self.overrideredirect(1)
+        self.birth = time()
+        self.info=info
+        self.config(bg="black")
+        lb = Label(self, text=info, background="black", foreground="white")
+        lb.pack()
+        self.geometry("+10000+10000")
+        self.width, self.height = lb.winfo_reqwidth(), lb.winfo_reqheight()
+
+narrations = []
+def narrupdate():
+    if len(narrations) == 0:
+        tk.after(10, narrupdate)
+        return
+    thew = max([n.width for n in narrations])
+    theh = NARRDELTAY
+    for nar in narrations[:]:
+        alpha = 1 - (time() - nar.birth) / NARRDISAPPEAR
+        if alpha < 0.001:
+            narrations.remove(nar)
+            nar.destroy()
+        else:
+            nar.attributes("-alpha", alpha)
+    for nar in narrations:
+        nar.geometry(f"{thew}x{nar.height}-0-{theh}")
+        theh += nar.height
+    tk.after(10, narrupdate)
+
+def narradd(info: str):
+    nar = Narration(info)
+    #while nar in narrations:
+    #    narrations.remove(nar)
+    narrations.insert(0, nar)
+    """
+    #if len(narrations) >= NARRMAX:
+    #    narrations.pop(-1).destroy()""""""
 
 class FocusToplevel(Toplevel):
     def __init__(self, *args, **kw):
@@ -70,15 +157,15 @@ class EditWindow(FocusToplevel):
         self.tvf.pack(fill=BOTH, expand=1, **PAD)
         Button(self, text="保存", command=self.save).pack(anchor=E, **PAD)
         self.goto("")
-    """
+    
     def gethelp(self):
         for k, v in helpdict.items():
             path = self.selecting() if self.tv.selection() else self.curr
-            if findall(k, path):
+            if k == path:
                 showinfo("Spinner", f"关于{path}的帮助：\n    {v}", parent=self)
                 break
         else:
-            showinfo("Spinner", "未找到对应的帮助文档", parent=self)"""
+            showinfo("Spinner", "未找到对应的帮助文档", parent=self)
 
     def goto(self, path):
         i = 0
@@ -184,6 +271,27 @@ class EditWindow(FocusToplevel):
         self.lib.SetValue(self.genpath(self.curr, "新数据"), None)
         self.refresh_tv()
     
+    def importbytesfromfile(self):
+        "导入文件"
+        sel = self.selecting()
+        file = askopenfilename(parent=self)
+        with open(file, "rb") as f:
+            self.lib.SetValue(sel, f.read())
+        self.refresh_tv()
+    
+    def exportbytes(self):
+        "导出为"
+        sel = self.selecting()
+        file = asksaveasfilename(parent=self)
+        with open(file, "wb") as f:
+            f.write(self.lib.QueryValue(sel))
+
+    def showasimg(self):
+        "作为图片查看"
+        sel = self.selecting()
+        img = Image.open(BytesIO(self.lib.QueryValue(sel))).convert("RGB")
+        start_new_thread(img.show, ())
+    
     def genpath(self, env, base):
         names = self.lib.EnumAll(env)
         if base not in names:
@@ -203,13 +311,15 @@ class EditWindow(FocusToplevel):
             items = [self.open, self.rename, self.newdir, self.newfile, self.remove]
             if self.lib.IsDir(sel):
                 items.extend([self.import_, self.cleardir])
+            elif isinstance(self.lib.QueryValue(sel), bytes):
+                items.extend([self.showasimg, self.exportbytes, self.importbytesfromfile])
         except:
             items = [self.newdir, self.newfile]
         menu = Menu(self, tearoff=0)
         for i in items:
             menu.add_command(label=i.__doc__, command=i)
-        #menu.add_separator()
-        #menu.add_command(label="帮助", command=self.gethelp)
+        menu.add_separator()
+        # menu.add_command(label="帮助", command=self.gethelp)
         menu.post(e.x_root, e.y_root)
 
 def gettypename(dat) -> str:
@@ -314,7 +424,7 @@ class ValueDialog(FocusToplevel):
             self.othrtxt.insert(0.0, pformat(val))
 
 cnflib = LoadAgFileName("config.aglib")
-assetslib = LoadAgFileName("assets.aglib")
+assetslib = cnflib.GetSubDirCopy("HKEY_ASSETS")
 texlib = assetslib.GetSubDirCopy("textures")
 iconlib = assetslib.GetSubDirCopy("icons")
 
@@ -365,6 +475,10 @@ VALUEMIN = EDTRLIB.QueryValue("valueMin")
 VALUEMAX = EDTRLIB.QueryValue("valueMax")
 TREECOLORODD = EDTRLIB.QueryValue("treeColorOdd")
 TREECOLOREVEN = EDTRLIB.QueryValue("treeColorEven")
+
+NARRDISAPPEAR = 3
+NARRDELTAY = 50
+NARRMAX = 4
 
 eng.setProperty("volume", SYSCNF.QueryValue("aiVolume"))
 eng.setProperty("rate", SYSCNF.QueryValue("aiRate"))
@@ -504,7 +618,6 @@ def update(_):
             break
     #tk.iconphoto(1, off)
     n = nextone.get()
-    print(n)
     if n != -1:
         shownum(n)
         read(VOICEPROMPT.format(num=n, name=VOICETIP.TryQueryValue(str(n), "") or NAMEDICT.TryQueryValue(str(n), "")))
@@ -515,7 +628,7 @@ def update(_):
         read(VOICEPROMPT.format(num=x, name=VOICETIP.TryQueryValue(str(x), "") or NAMEDICT.TryQueryValue(str(x), "")))
 
 def focus():
-    top.after(1000, focus)
+    top.after(3050, focus)
     #top.focus_set()
     if now_geo.get() != "hidden":
         windll.user32.SetForegroundWindow(top.winfo_id())
@@ -553,11 +666,10 @@ def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.3.1 更新==
-    1. 修复了编辑器树视图颜色反了bug
-    2. 修复了在加载结束时关掉资源管理器会导致Spinner窗口不出现的bug
-    3. 去掉了编辑器的水平卷动条
-    4. 现在第二次打开编辑器会回到第一次的状态"""
+    """==Spinner 1.3.1+24w05a 更新（版本代号 1）==
+    1. 添加了模组加载器
+    2. 素材包（assets.aglib）被合并到配置文件（config.aglib）中
+    3. 配置编辑器添加了对于字节数据的导出为文件、从文件导入以及作为图片查看的操作"""
     showinfo("Spinner", show_log.__doc__, parent=top)
 
 def contributors():
@@ -612,6 +724,10 @@ def genmenu(pmenu: Menu, path: str):
 for x in sorted(TOOLS.EnumDirs()):
     genmenu(too, x)
 menubar.add_cascade(label="工具", menu=too)
+
+modmenu = Menu(menubar, tearoff=0)
+menubar.add_cascade(menu=modmenu, label="模组")
+
 top.config(menu=menubar)
 
 init()
@@ -620,9 +736,40 @@ top.after(0, focus)
 top.attributes("-topmost", 1)
 top.resizable(0, 0)
 top.deiconify()
-windll.user32.SetFocus(top.winfo_id())
+#windll.user32.SetFocus(top.winfo_id())
+top.focus_force()
+
+sorge._glb = globals()
+mods = {}
+pattern = r"^[a-zA-Z_][a-zA-Z_0-9]*_\d+$"
+mod_count = 0
+mod_loaded = IntVar(value=0)
+
+def loadm(z: zipimporter, mname: str):
+    name, ver = mname.split("_")
+    assert name not in mods
+    mods[name] = int(ver)
+    mod_loaded.set(mod_loaded.get()+1)
+    z.load_module(mname)
+
+for fn in listdir("mods"):
+    if fn.endswith(".zip"):
+        z = zipimporter(join("mods", fn))
+        guide = z.load_module("modinit")
+        for x in guide.modlist:
+            if findall(pattern, x):
+                print(x)
+                mod_count += 1
+                top.after(0, lambda z=z, x=x: loadm(z, x))
+                top.update()
+                top.update_idletasks()
+
+while mod_loaded.get() < mod_count: print(mod_loaded.get())
+all_mods_loaded = True
+
 for t in range(100):
     top.attributes("-alpha", top.attributes("-alpha")+0.01)
     sleep(0.002)
     top.update()
+
 tk.wait_window(top)
