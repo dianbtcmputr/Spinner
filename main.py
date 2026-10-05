@@ -6,54 +6,165 @@ from os.path import splitext
 from random import choice, choices, shuffle
 from sys import executable
 from time import sleep
-from tkinter import (BOTH, END, LEFT, NW, X, BooleanVar, Canvas, IntVar, Label, Menu, StringVar,
+from tkinter import (ALL, BOTH, E, END, EW, HORIZONTAL, LEFT, NS, NSEW, NW, VERTICAL, X, BooleanVar, Canvas, Event, IntVar, Label, Menu, StringVar,
                      Tk, Toplevel, Variable)
-from tkinter.messagebox import showinfo
-from tkinter.scrolledtext import ScrolledText
-from tkinter.simpledialog import askinteger
-from tkinter.ttk import Button, Entry, Frame
+from tkinter.filedialog import askopenfilename
+from tkinter.messagebox import askokcancel, showerror, showinfo
+from tkinter.simpledialog import askinteger, askstring
+from tkinter.ttk import Button, Entry, Frame, Scrollbar, Treeview
 
-from aglib import AgDir, LoadAgFileName, SaveAgFileName
+from agdat import AgDir, Join, LoadAgFileName, SaveAgFileName, CopyObj, SplitBy
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
 
-VERSION = "Spinner 1.2+24w02a"
+VERSION = "Spinner 1.2+24w03a"
 tk = Tk()
 tk.title(VERSION)
 eng = Engine()
 
 class EditWindow(Toplevel):
-    def __init__(self):
+    def __init__(self, lib: AgDir):
+        self.lib = CopyObj(lib)
         Toplevel.__init__(self)
         self.title("Spinner")
         self.transient(top)
-        self.txt = ScrolledText(self, font=EDITORFONT)
-        self.txt.pack(fill=BOTH, expand=1, **PAD)
-        self.cmdf = Frame(self)
-        self.ety = Entry(self.cmdf, font=EDITORFONT)
-        self.ety.bind("<Return>", lambda _:self.go())
-        self.ety.pack(side=LEFT, fill=X, **PAD)
-        Button(self.cmdf, text="Go", command=self.go).pack(side=LEFT, **PAD)
-        Button(self.cmdf, text="保存", command=self.save).pack(side=LEFT, **PAD)
-        self.cmdf.pack(fill=X)
         self.geometry(f"{EDITORW}x{EDITORH}+{top.winfo_x()}+{top.winfo_y()}")
-    def save(self):
-        SaveAgFileName(cnflib, "config2.aglib")
+        self.pathf = Frame(self)
+        Button(self.pathf, text="<", command=self.return_).pack(side=LEFT, **PAD)
+        self.ety = Entry(self.pathf)
+        self.ety.bind("<Return>", self.gobyety)
+        self.ety.pack(side=LEFT, expand=1, fill=X, **PAD)
+        Button(self.pathf, text="->", command=self.gobyety).pack(side=LEFT, **PAD)
+        self.pathf.pack(fill=X)
+        self.tvf = Frame(self)
+        self.tv = Treeview(self.tvf, show="headings", selectmode="browse", columns=(0, 1, 2), )
+        self.tv.heading(0, text="名称")
+        self.tv.heading(1, text="类型")
+        self.tv.heading(2, text="值")
+        self.tv.bind("<3>", self.right)
+        self.tv.bind("<Double-1>", self.open)
+        self.tv.grid(row=0, column=0, sticky=NSEW)
+        self.vbar = Scrollbar(self.tvf, command=self.tv.yview, orient=VERTICAL)
+        self.vbar.grid(row=0, column=1, sticky=NS)
+        self.hbar = Scrollbar(self.tvf, command=self.tv.xview, orient=HORIZONTAL)
+        self.hbar.grid(row=1, column=0, sticky=EW)
+        self.tv.config(xscrollcommand=self.hbar.set, yscrollcommand=self.vbar.set)
+        self.tvf.grid_columnconfigure(0, weight=1)
+        self.tvf.grid_rowconfigure(0, weight=1)
+        self.tvf.pack(fill=BOTH, expand=1, **PAD)
+        Button(self, text="保存", command=self.save).pack(anchor=E, **PAD)
+        self.goto("")
     
-    def go(self):
-        cmd = self.ety.get()
+    def goto(self, path):
+        self.tv.delete(*self.tv.get_children())
+        for x in sorted(self.lib.EnumDirs(path)):
+            self.tv.insert("", END, values=(x, "数据夹", "-"), iid=Join(path, x))
+        for x in sorted(self.lib.EnumFiles(path)):
+            val = self.lib.QueryValue(Join(path, x))
+            self.tv.insert("", END, values=(x, getdattype(val), repr(val)), iid=Join(path, x))
         self.ety.delete(0, END)
-        try:
-            res = repr(eval(cmd))
-        except Exception as e:
-            res = f"{type(e).__name__}: {str(e)}"
-        self.txt.insert(END, f">>> {cmd}\n{res}\n")
+        self.ety.insert(0, path)
+        self.curr = path
+        self.update()
+    
+    def gobyety(self, *e):
+        self.goto(self.ety.get())
+    
+    def return_(self):
+        self.goto(SplitBy(self.curr, -1)[0])
+    
+    def refresh_tv(self):
+        self.goto(self.curr)
 
-def prettydat(dat: dict) -> str:
-    res = []
-    for k, v in dat.items():
-        res.append(f"{repr(k)}: {repr(v)}")
-    return "{ " + (",\n  ".join(res)) + "}"
+    def selecting(self):
+        return self.tv.selection()[0]
+    
+    def save(self):
+        SaveAgFileName(self.lib, "config.aglib")
+    
+    def open(self, *e):
+        "打开/编辑"
+        sel = self.selecting()
+        if self.lib.IsDir(sel):
+            self.goto(sel)
+            return
+        res = askstring("Spinner", "新值：", initialvalue=repr(self.lib.QueryValue(sel)), parent=self)
+        if res:
+            self.lib.SetValue(sel, eval(res))
+            self.refresh_tv()
+    
+    def rename(self):
+        "重命名"
+        sel = self.selecting()
+        res = askstring("Spinner", "新名称：", parent=self, initialvalue=SplitBy(sel, -1))
+        if res:
+            self.lib.Rename(sel, res)
+            self.refresh_tv()
+    
+    def remove(self):
+        "删除"
+        sel = self.selecting()
+        if askokcancel("Spinner", "是否删除？", parent=self):
+            self.lib.Remove(sel)
+            self.refresh_tv()
+    
+    def import_(self):
+        "从另一库中导入"
+        sel = self.selecting()
+        fn = askopenfilename(parent=self)
+        if fn:
+            try:
+                lib2 = LoadAgFileName(fn)
+                self.lib.Remove(sel)
+                self.lib.Attach(lib2.GetSubDirCopy(sel), sel)
+                self.refresh_tv()
+            except:
+                showerror("Spinner", "所选库不含等位数据夹")
+
+    def cleardir(self):
+        "清空所选数据夹"
+        sel = self.selecting()
+        if askokcancel("Spinner", "是否清空？", parent=self):
+            for i in self.lib.EnumAll(sel):
+                self.lib.Remove(Join(sel, i))
+            self.refresh_tv()
+
+    def newdir(self):
+        "新建数据夹"
+        self.lib.MkDir(self.genpath(self.curr, "新数据夹"))
+        self.refresh_tv()
+
+    def newfile(self):
+        "新建数据"
+        self.lib.SetValue(self.genpath(self.curr, "新数据"), None)
+        self.refresh_tv()
+    
+    def genpath(self, env, base):
+        names = self.lib.EnumAll(env)
+        if base not in names:
+            return Join(env, base)
+        else:
+            id = 1
+            while True:
+                new = f"{base} {id}"
+                if new not in names:
+                    return Join(env, new)
+                id += 1
+    
+    def right(self, e: Event):
+        sel = self.selecting()
+        menu = Menu(self, tearoff=0)
+        items = [self.open, self.rename, self.newdir, self.newfile, self.remove]
+        if self.lib.IsDir(sel):
+            items.extend([self.import_, self.cleardir])
+        #else:
+        #    items.extend([self.readf])
+        for i in items:
+            menu.add_command(label=i.__doc__, command=i)
+        menu.post(e.x_root, e.y_root)
+
+def getdattype(dat):
+    return type(dat).__name__
 
 cnflib = LoadAgFileName("config.aglib")
 assetslib = LoadAgFileName("assets.aglib")
@@ -99,8 +210,8 @@ IMGS = {}
 
 files = texlib.EnumFiles()
 fcount = len(files)
+tk.title(VERSION)
 tk.geometry(f"{LOADWINSIZE}x{LOADWINSIZE}+{int(SW/2 - LOADWINSIZE/2)}+{int(SH/2 - LOADWINSIZE/2)}")
-tk.overrideredirect(1)
 c = Canvas(tk, highlightthickness=0)
 c.place(x=0, y=0, relwidth=1, relheight=1)
 rd, rdo = loadpimg(iconlib, "redstone_lamp.png", LOADWINSIZE), loadpimg(iconlib, "redstone_lamp_on.png", LOADWINSIZE)
@@ -111,19 +222,28 @@ for ind, fn in enumerate(files):
     if fn.endswith(".png"):
         IMGS[splitext(fn)[0]] = loadpimg(texlib, fn, int(16*SCALE))
         tk.update()
-    l.config(width=ind/fcount*150)
+    l.config(width=ind/fcount*LOADWINSIZE)
 for x in range(100):
     tk.attributes("-alpha", tk.attributes("-alpha") - 0.01)
     tk.update()
     sleep(0.005)
+tk.overrideredirect(1)
+current = StringVar(value=DEFAULTTEXTURE)
+define = Variable()
+
+def getimgs():
+    if current.get() != "__define__":
+        on, off = COMBINES.QueryValue(current.get())
+    else:
+        on, off = define.get()
+    return IMGS[on], IMGS[off]
 
 tk.geometry("+10000+10000")
-tk.overrideredirect(1)
 del c, l, w
 top = Toplevel(tk)
 top.title(VERSION)
 top.transient(tk)
-top.iconphoto(1, rd)
+#tk.iconphoto(1, getimgs()[1])
 cvs = Canvas(top, highlightthickness=0)
 cvs.place(relx=0, rely=0, relwidth=1, relheight=1)
 
@@ -148,16 +268,6 @@ def set_top_geometry(geo, hidding=False):
 
 set_top_geometry(f"{W}x{H}+{int(SW/2 - W/2)}+{int(SH/2 - H/2)+DELTAY}")
 top.attributes("-alpha", 0)
-
-current = StringVar(value=DEFAULTTEXTURE)
-define = Variable()
-
-def getimgs():
-    if current.get() != "__define__":
-        on, off = COMBINES.QueryValue(current.get())
-    else:
-        on, off = define.get()
-    return IMGS[on], IMGS[off]
 
 def randtexture(*e):
     define.set(choices(list(IMGS.keys()), k=2))
@@ -212,9 +322,11 @@ def init():
             cvs.create_image(x * 16 * SCALE, y * 16 * SCALE, image=on, anchor="nw", tag=f"r{id_y}")
             id_y += 1
     cvs.update()
+    #tk.iconphoto(1, off)
 
 rolling = BooleanVar(value=False)
 def update(_):
+    on, off = getimgs()
     if now_geo.get() == "hidden":
         winclose()
     if rolling.get() == True:
@@ -222,13 +334,13 @@ def update(_):
         return
     t = 0
     rolling.set(True)
-    top.iconphoto(1, rdo)
+    #tk.iconphoto(1, on)
     while True:
         t += 1
         shownum(choice(MEMBERS))
         if t == REPEATTIMES or rolling.get() == False:
             break
-    top.iconphoto(1, rd)
+    #tk.iconphoto(1, off)
     n = nextone.get()
     print(n)
     if n != -1:
@@ -270,12 +382,10 @@ def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.2+24w02a 更新==
-    1. 更改了加载封面
-    2. 将贴图和设置都整合为AgLib文件
-    3. 有了窗口图标
-    4. 解决了某些平台上的抖窗闪窗问题
-    5. 为了安全性考虑，保存设置会生成新的config2.aglib，需手动重命名"""
+    """==Spinner 1.2+24w03a 更新==
+    1. 删除了窗口图标
+    2. 增加了配置编辑器
+    3. 修复了调大加载窗口会导致进度走不到终点bug"""
     showinfo("Spinner", show_log.__doc__, parent=top)
 
 tric = Menu(menubar, tearoff=0)
@@ -295,7 +405,7 @@ else:
     menubar.add_cascade(label=f"恶搞（已禁用）", menu=Menu(menubar, tearoff=0))
 
 edit = Menu(menubar, tearoff=0)
-edit.add_command(label="打开编辑器", command=EditWindow)
+edit.add_command(label="打开编辑器", command=lambda:EditWindow(cnflib))
 edit.add_command(label="重新启动", command=restart)
 menubar.add_cascade(label="配置", menu=edit)
 

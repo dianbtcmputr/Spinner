@@ -1,0 +1,1 @@
+pyinstaller main.py -w -i 1.ico --hidden-import pyttsx4.drivers.sapi5
