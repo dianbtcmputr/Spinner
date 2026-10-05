@@ -1,0 +1,9 @@
+{"Redstone Lamp":["redstone_lamp_on", "redstone_lamp"],
+ "Copper Bulb":["copper_bulb_lit", "copper_bulb"],
+ "Copper Block":["copper_block", "oxidized_copper"],
+ "Bamboo Block":["stripped_bamboo_block", "bamboo_block"],
+ "Diamond Ore":["diamond_ore", "stone"],
+ "Deepslate Diamond":["deepslate_diamond_ore", "deepslate"],
+ "Quartz Ore":["nether_quartz_ore", "netherrack"],
+ "Wool":["black_wool", "white_wool"],
+ "Furnace":["furnace_front_on", "furnace_front"]}
