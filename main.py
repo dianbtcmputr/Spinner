@@ -1,22 +1,23 @@
 from _thread import start_new_thread
 from ctypes import windll
-from json import dumps, loads
-from os import execl, listdir, system
-from os.path import join, splitext
+from io import BytesIO
+from os import execl, system
+from os.path import splitext
 from random import choice, choices, shuffle
 from sys import executable
 from time import sleep
-from tkinter import (BOTH, END, INSERT, BooleanVar, Canvas, IntVar, Label, Menu, StringVar, Tk,
-                     Toplevel, Variable, X)
-from tkinter.messagebox import showerror, showinfo
+from tkinter import (BOTH, END, LEFT, NW, X, BooleanVar, Canvas, IntVar, Label, Menu, StringVar,
+                     Tk, Toplevel, Variable)
+from tkinter.messagebox import showinfo
 from tkinter.scrolledtext import ScrolledText
 from tkinter.simpledialog import askinteger
-from tkinter.ttk import Button, Frame, Notebook, Progressbar
+from tkinter.ttk import Button, Entry, Frame
 
+from aglib import AgDir, LoadAgFileName, SaveAgFileName
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
 
-VERSION = "Spinner 1.2"
+VERSION = "Spinner 1.2+24w02a"
 tk = Tk()
 tk.title(VERSION)
 eng = Engine()
@@ -26,38 +27,27 @@ class EditWindow(Toplevel):
         Toplevel.__init__(self)
         self.title("Spinner")
         self.transient(top)
-        self.place_widgets()
+        self.txt = ScrolledText(self, font=EDITORFONT)
+        self.txt.pack(fill=BOTH, expand=1, **PAD)
+        self.cmdf = Frame(self)
+        self.ety = Entry(self.cmdf, font=EDITORFONT)
+        self.ety.bind("<Return>", lambda _:self.go())
+        self.ety.pack(side=LEFT, fill=X, **PAD)
+        Button(self.cmdf, text="Go", command=self.go).pack(side=LEFT, **PAD)
+        Button(self.cmdf, text="保存", command=self.save).pack(side=LEFT, **PAD)
+        self.cmdf.pack(fill=X)
         self.geometry(f"{EDITORW}x{EDITORH}+{top.winfo_x()}+{top.winfo_y()}")
+    def save(self):
+        SaveAgFileName(cnflib, "config2.aglib")
     
-    def place_widgets(self):
-        nb = Notebook(self)
-        for txt, dat, fn in [["系统设置", SYSCNF, "syscnf.json"],
-                             ["贴图设置", COMBINES, "combines.json"],
-                             ["数字数据", NUMDAT, "numdat.json"],
-                             ["学号姓名", NAMEDICT, "namedict.json"],
-                             ["系统工具", TOOLS, "tools.json"],
-                             ["读音提示", VOICETIP, "voicetip.json"]]:
-            f = Frame(self)
-            st = ScrolledText(f, font=EDITORFONT)
-            st.insert(INSERT, prettydat(dat))
-            st.pack(fill=BOTH, expand=1, **PAD)
-            Button(f, text="保存（一定要保存！！！）", command=lambda fn=fn, st=st:self.save(fn, st)).pack(fill=X, **PAD)
-            nb.add(f, text=txt)
-        nb.pack(fill=BOTH, expand=1, **PAD)
-    
-    def save(self, fn, st: ScrolledText):
-        cont = st.get("0.0", END).replace("\n", "").strip()
-        try:    
-            dat = dumps(eval(cont))
-            with open(join("config", fn), "w") as f:
-                f.write(dat)
-            showinfo("Spinner", "保存成功", parent=self)
+    def go(self):
+        cmd = self.ety.get()
+        self.ety.delete(0, END)
+        try:
+            res = repr(eval(cmd))
         except Exception as e:
-            showerror("Spinner", f"引发{type(e).__name__}错误，保存失败: \n{e}", parent=self)
-
-def loadjson(fn: str) -> dict:
-    with open(join("config", f"{fn}.json")) as f:
-        return loads(f.read())
+            res = f"{type(e).__name__}: {str(e)}"
+        self.txt.insert(END, f">>> {cmd}\n{res}\n")
 
 def prettydat(dat: dict) -> str:
     res = []
@@ -65,65 +55,63 @@ def prettydat(dat: dict) -> str:
         res.append(f"{repr(k)}: {repr(v)}")
     return "{ " + (",\n  ".join(res)) + "}"
 
-SYSCNF = loadjson("syscnf")
-NUMDAT = loadjson("numdat")
-COMBINES = loadjson("combines")
-NAMEDICT = loadjson("namedict")
-TOOLS = loadjson("tools")
-VOICETIP = loadjson("voicetip")
+cnflib = LoadAgFileName("config.aglib")
+assetslib = LoadAgFileName("assets.aglib")
+texlib = assetslib.GetSubDirCopy("textures")
+iconlib = assetslib.GetSubDirCopy("icons")
 
-SCALE = SYSCNF["scale"]
-MEMBERS = list(range(SYSCNF["min"], SYSCNF["max"] + 1))
-MEMBERS.extend(SYSCNF["blackNames"] * SYSCNF["blackWeight"])
+def loadpimg(lib: AgDir, name, size: int):
+    return ImageTk.PhotoImage(Image.open(BytesIO(lib.QueryValue(name))).crop((0, 0, 16, 16)).resize((size, size)))
 
-for x in SYSCNF["whiteNames"]:
+SYSCNF = cnflib.GetSubDirCopy("HKEY_SYSTEM")
+NUMDAT = cnflib.GetSubDirCopy("HKEY_NUM_DATA")
+COMBINES = cnflib.GetSubDirCopy("HKEY_COMBINES")
+NAMEDICT = cnflib.GetSubDirCopy("HKEY_NAMES")
+TOOLS = cnflib.GetSubDirCopy("HKEY_TOOLS")
+VOICETIP = cnflib.GetSubDirCopy("HKEY_VOICE_TIP")
+
+SCALE = SYSCNF.QueryValue("scale")
+MEMBERS = list(range(SYSCNF.QueryValue("min"), SYSCNF.QueryValue("max") + 1))
+MEMBERS.extend(SYSCNF.QueryValue("blackNames") * SYSCNF.QueryValue("blackWeight"))
+
+for x in SYSCNF.QueryValue("whiteNames"):
     MEMBERS.remove(x)
 for x in range(10):
     shuffle(MEMBERS)
 
-PAD = SYSCNF["pad"]
+PAD = SYSCNF.QueryValue("pad")
 W, H = int(256 * SCALE), int(208 * SCALE)
 SW, SH = tk.winfo_screenwidth(), tk.winfo_screenheight()
-REPEATTIMES = SYSCNF["repeatTimes"]
-ALPHA = SYSCNF["alpha"]
-DEFAULTTEXTURE = SYSCNF["defaultTexture"]
-EDITORFONT = SYSCNF["editorFont"]
-DELTAY = SYSCNF["deltaY"]
-LOADBG = SYSCNF["loadBG"]
-LOADFG = SYSCNF["loadFG"]
-VOICEPROMPT = SYSCNF["voicePrompt"]
-DOTRICKS = SYSCNF["doTricks"]
-EDITORW, EDITORH = SYSCNF["editorWH"]
-VOICETIPMARK = SYSCNF["voiceTipMark"]
+REPEATTIMES = SYSCNF.QueryValue("repeatTimes")
+ALPHA = SYSCNF.QueryValue("alpha")
+DEFAULTTEXTURE = SYSCNF.QueryValue("defaultTexture")
+EDITORFONT = SYSCNF.QueryValue("editorFont")
+DELTAY = SYSCNF.QueryValue("deltaY")
+VOICEPROMPT = SYSCNF.QueryValue("voicePrompt")
+DOTRICKS = SYSCNF.QueryValue("doTricks")
+EDITORW, EDITORH = SYSCNF.QueryValue("editorWH")
+VOICETIPMARK = SYSCNF.QueryValue("voiceTipMark")
+LOADWINSIZE = SYSCNF.QueryValue("loadWinSize")
 
-eng.setProperty("volume", SYSCNF["aiVolume"])
-eng.setProperty("rate", SYSCNF["aiRate"])
-
+eng.setProperty("volume", SYSCNF.QueryValue("aiVolume"))
+eng.setProperty("rate", SYSCNF.QueryValue("aiRate"))
 IMGS = {}
-files = listdir("assets")
-tk.config(bg=LOADBG)
-textv = StringVar(value="Loading Images")
-Label(tk, text="Spinner", font="Consolas 60", fg=LOADFG, bg=LOADBG).pack(fill=X, **PAD)
-Label(tk, text="Version 1.2", fg=LOADFG, bg=LOADBG, font="Consolas 30").pack(fill=X, **PAD)
-Label(tk, textvariable=textv, fg=LOADFG, bg=LOADBG, font="Consolas 15").pack(fill=X, **PAD)
 
-pbv = IntVar()
-Progressbar(tk, maximum=len(files)+100, variable=pbv).pack(fill=X, **PAD)
-tk.geometry(f"600x250+{int(SW/2 - 300)}+{int(SH/2 - 125)+DELTAY}")
-
+files = texlib.EnumFiles()
+fcount = len(files)
+tk.geometry(f"{LOADWINSIZE}x{LOADWINSIZE}+{int(SW/2 - LOADWINSIZE/2)}+{int(SH/2 - LOADWINSIZE/2)}")
+tk.overrideredirect(1)
+c = Canvas(tk, highlightthickness=0)
+c.place(x=0, y=0, relwidth=1, relheight=1)
+rd, rdo = loadpimg(iconlib, "redstone_lamp.png", LOADWINSIZE), loadpimg(iconlib, "redstone_lamp_on.png", LOADWINSIZE)
+c.create_image(0, 0, image=rd, anchor=NW)
+l = Label(tk, anchor=NW, image=rdo, width=0, highlightthickness=0)
+w = c.create_window(-2, -2, anchor=NW, window=l)
 for ind, fn in enumerate(files):
     if fn.endswith(".png"):
-        IMGS[splitext(fn)[0]] = ImageTk.PhotoImage(Image.open(join("assets", fn)).crop((0, 0, 16, 16)).resize((int(16 * SCALE), int(16 * SCALE))))
+        IMGS[splitext(fn)[0]] = loadpimg(texlib, fn, int(16*SCALE))
         tk.update()
-    pbv.set(pbv.get() + 1)
-for x in range(30):
-    tk.update()
-    sleep(0.02)
-textv.set("Spinner Progress")
-for x in range(100):
-    pbv.set(pbv.get() + 1)
-    tk.update()
-    sleep(0.0005+x*0.0003)
+    l.config(width=ind/fcount*150)
 for x in range(100):
     tk.attributes("-alpha", tk.attributes("-alpha") - 0.01)
     tk.update()
@@ -131,9 +119,11 @@ for x in range(100):
 
 tk.geometry("+10000+10000")
 tk.overrideredirect(1)
+del c, l, w
 top = Toplevel(tk)
 top.title(VERSION)
 top.transient(tk)
+top.iconphoto(1, rd)
 cvs = Canvas(top, highlightthickness=0)
 cvs.place(relx=0, rely=0, relwidth=1, relheight=1)
 
@@ -157,13 +147,14 @@ def set_top_geometry(geo, hidding=False):
     top.geometry(geo)
 
 set_top_geometry(f"{W}x{H}+{int(SW/2 - W/2)}+{int(SH/2 - H/2)+DELTAY}")
+top.attributes("-alpha", 0)
 
 current = StringVar(value=DEFAULTTEXTURE)
 define = Variable()
 
 def getimgs():
     if current.get() != "__define__":
-        on, off = COMBINES[current.get()]
+        on, off = COMBINES.QueryValue(current.get())
     else:
         on, off = define.get()
     return IMGS[on], IMGS[off]
@@ -187,8 +178,8 @@ top.protocol("WM_DELETE_WINDOW", winclose)
 def shownum(x: int):
     a, b = ("0" + str(x))[-2:]
     on, off = getimgs()
-    left = NUMDAT[a]
-    right = NUMDAT[b]
+    left = NUMDAT.QueryValue(a)
+    right = NUMDAT.QueryValue(b)
 
     for id in range(0, 45):
         if id in left:
@@ -231,22 +222,23 @@ def update(_):
         return
     t = 0
     rolling.set(True)
+    top.iconphoto(1, rdo)
     while True:
         t += 1
         shownum(choice(MEMBERS))
         if t == REPEATTIMES or rolling.get() == False:
             break
-
+    top.iconphoto(1, rd)
     n = nextone.get()
     print(n)
     if n != -1:
         shownum(n)
-        read(VOICEPROMPT.format(num=n, name=VOICETIP.get(str(n), "") or NAMEDICT.get(str(n), "")))
+        read(VOICEPROMPT.format(num=n, name=VOICETIP.TryQueryValue(str(n), "") or NAMEDICT.TryQueryValue(str(n), "")))
         nextone.set(-1)
     else:
         x = choice(MEMBERS)
         shownum(x)
-        read(VOICEPROMPT.format(num=x, name=VOICETIP.get(str(x), "") or NAMEDICT.get(str(x), "")))
+        read(VOICEPROMPT.format(num=x, name=VOICETIP.TryQueryValue(str(x), "") or NAMEDICT.TryQueryValue(str(x), "")))
 
 def focus():
     top.after(1000, focus)
@@ -261,7 +253,7 @@ def start_tool(t):
 
 menubar = Menu(top)
 comb = Menu(menubar, tearoff=0)
-for k in COMBINES.keys():
+for k in COMBINES.EnumFiles():
     comb.add_radiobutton(label=k, value=k, command=init, variable=current)
 comb.add_separator()
 comb.add_radiobutton(label="从素材库中随机...", value="__define__", command=randtexture, variable=current)
@@ -270,28 +262,20 @@ menubar.add_cascade(label="贴图", menu=comb)
 def add_trick_items(menu: Menu, labl, content:list):
     subm = Menu(menu, tearoff=0)
     for c in content:
-        number = str(c) + (VOICETIPMARK if str(c) in VOICETIP.keys() else "")
-        subm.add_command(label=number, command=lambda who=c:nextone.set(who), accelerator=NAMEDICT[str(c)])
+        number = str(c) + (VOICETIPMARK if str(c) in VOICETIP.EnumFiles() else "")
+        subm.add_command(label=number, command=lambda who=c:nextone.set(who), accelerator=NAMEDICT.QueryValue(str(c)))
     menu.add_cascade(label=labl, menu=subm)
 
 def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.2 更新==
-    1. 修复了重启bug
-    2. 删除了后台监视器
-    3. 添加编辑器的字体设置功能
-    4. 添加AI音量、语速设置功能
-    5. 现在恶搞栏的学号后面有了姓名
-    6. 将“姓名学号”改为“学号姓名”
-    7. 添加了读音提示配置文件，且在恶搞栏中，设置了读音提示的成员的学号后会有标记（默认为 *）
-    8. 将点一下卷动几秒自动出下一个号，改为点一下之后开始不停卷动，再点一下或卷动次数达到最大值才出号
-    9. 现在Spinner窗口不再能通过右击任务栏图标的途径关闭
-    10. 添加了加载封面，前景背景颜色可设
-    11. 现在如果用户在窗口隐藏时点击抽号，那么窗口将自动弹出来
-    12. 增加了窗口垂直方向位置偏好设置
-    13. 增加了编辑器窗口大小设置，以及保存成功或失败的提示"""
+    """==Spinner 1.2+24w02a 更新==
+    1. 更改了加载封面
+    2. 将贴图和设置都整合为AgLib文件
+    3. 有了窗口图标
+    4. 解决了某些平台上的抖窗闪窗问题
+    5. 为了安全性考虑，保存设置会生成新的config2.aglib，需手动重命名"""
     showinfo("Spinner", show_log.__doc__, parent=top)
 
 tric = Menu(menubar, tearoff=0)
@@ -316,8 +300,8 @@ edit.add_command(label="重新启动", command=restart)
 menubar.add_cascade(label="配置", menu=edit)
 
 too = Menu(menubar, tearoff=0)
-for k, v in TOOLS.items():
-    too.add_command(label=k, command=lambda v=v: start_tool(v))
+for k in TOOLS.EnumFiles():
+    too.add_command(label=k, command=lambda v=TOOLS.QueryValue(k): start_tool(v))
 too.add_separator()
 too.add_command(label="更新日志", command=show_log)
 menubar.add_cascade(label="工具", menu=too)
@@ -329,5 +313,10 @@ cvs.bind("<1>", update)
 top.after(0, focus)
 top.attributes("-topmost", 1)
 top.resizable(0, 0)
+
 windll.user32.SetFocus(top.winfo_id())
+for t in range(100):
+    top.attributes("-alpha", top.attributes("-alpha")+0.01)
+    sleep(0.002)
+    top.update()
 tk.wait_window(top)
