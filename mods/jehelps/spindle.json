@@ -1,0 +1,10 @@
+{
+    "displayName": "Just Enough Helps",
+    "modId": "jehelps",
+    "dependencies": [],
+    "version": "1.0",
+    "mainFile": "jehelps.py",
+    "mainEntry": "main",
+    "description": "JEHelps 配置提示\n　　使用配置编辑器时，鼠标悬停于条目上会显示相应帮助文档",
+    "mainIntegrate": "integrate"
+}

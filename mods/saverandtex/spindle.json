@@ -1,0 +1,9 @@
+{
+    "displayName": "Save Random Texture",
+    "modId": "saverandtex",
+    "dependencies": ["menuapi"],
+    "version": "1.0",
+    "mainFile": "saverandtex.py",
+    "mainEntry": "main",
+    "description": "Save Random Texture 保存随机贴图\n　　将随机选出的贴图组合保存为新项目（在“贴图 → 保存此贴图”）。"
+}

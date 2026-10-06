@@ -1,0 +1,9 @@
+{
+    "displayName": "Tool Box",
+    "modId": "toolbox",
+    "dependencies": ["menuapi"],
+    "version": "1.0",
+    "mainFile": "toolbox.py",
+    "mainEntry": "main",
+    "description": "Tool Box 旧版工具栏\n　　将旧版 Spinner（≤ 1.4）的工具栏加入新版"
+}

@@ -1,134 +1,49 @@
 from _thread import start_new_thread
+from atexit import register
 from io import BytesIO
-from os import execl, startfile, system
+from os import execl
 from os.path import splitext
 from pprint import pformat
 from random import Random
 from sys import executable
 from time import sleep
-from tkinter import (BOTH, DISABLED, END, EW, LEFT, NS, NSEW, NW, RIGHT,
-                     VERTICAL, BooleanVar, Canvas, DoubleVar, E, Event, IntVar,
-                     Label, Menu, StringVar, Tk, Toplevel, Variable, W, X)
+from tkinter import Event, Label as TLabel
+from ttkbootstrap import (
+    BooleanVar, Canvas, DoubleVar, IntVar, Button, Menu, StringVar, Window, Toplevel,
+    Variable, Checkbutton, Entry, Frame, Radiobutton, Scrollbar, Spinbox, Treeview)
+from ttkbootstrap.constants import *
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter.messagebox import askokcancel, showerror, showinfo
 from tkinter.scrolledtext import ScrolledText
 from tkinter.simpledialog import askinteger
-from tkinter.ttk import (Button, Checkbutton, Entry, Frame, Radiobutton,
-                         Scrollbar, Spinbox, Treeview)
 from types import NoneType
-from webbrowser import open_new
-
-from agdat import AgDir, Join, LoadAgFileName, SaveAgFileName, SplitBy
+from agdat import AgDir, Join, LoadAgFileName, SaveAgFileName, SplitBy, CopyObj
 from PIL import Image, ImageTk
 from pyttsx4 import Engine
+from cnf_and_con import *
+import spindle, sys
 
-TYPENAMES = {"str": "字符串", "int": "整数", "float": "小数", "bool": "真/假", "NoneType": "空值"}
-VERSION = "Spinner 1.4"
-VER_ID = 1
-tk = Tk()
+VERSION = "Spinner 1.5 - snapshot 1"
+register(lambda: tk.destroy())
+
+tk = Window()
 tk.title(VERSION)
+SW, SH = tk.winfo_screenwidth(), tk.winfo_screenheight()
+
 eng = Engine()
 
 flashrng = Random()
 namesrng = Random()
 textrrng = Random()
 
-helpdict = {r"HKEY_SYSTEM": "存储有关系统设置的值",
-            r"HKEY_SYSTEM\aiRate": "整数，控制语音合成的语速",
-            r"HKEY_SYSTEM\aiVolume": "0~1的小数，控制语音合成的音量",
-            r"HKEY_SYSTEM\alpha": "0~1的小数，控制",
-            r"HKEY_SYSTEM\blackNames": "",
-            r"HKEY_SYSTEM\blackWeight": "",
-            r"HKEY_SYSTEM\defaultTexture": "",
-            r"HKEY_SYSTEM\deltaY": "",
-            r"HKEY_SYSTEM\doTricks": "",
-            r"HKEY_SYSTEM\loadWinSize": "",
-            r"HKEY_SYSTEM\max": "",
-            r"HKEY_SYSTEM\min": "",
-            r"HKEY_SYSTEM\pad": "",
-            r"HKEY_SYSTEM\repeatTimes": "",
-            r"HKEY_SYSTEM\scale": "",
-            r"HKEY_SYSTEM\voiceTipMark": "",
-            r"HKEY_SYSTEM\voicePrompt": "",
-            r"HKEY_SYSTEM\whiteNames": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",
-            r"": "",}
-"""
-class Narration(Toplevel):
-    def __init__(self, info:str):
-        Toplevel.__init__(self, top)
-        self.transient(top)
-        self.overrideredirect(1)
-        self.birth = time()
-        self.info=info
-        self.config(bg="black")
-        lb = Label(self, text=info, background="black", foreground="white")
-        lb.pack()
-        self.geometry("+10000+10000")
-        self.width, self.height = lb.winfo_reqwidth(), lb.winfo_reqheight()
-
-narrations = []
-def narrupdate():
-    if len(narrations) == 0:
-        tk.after(10, narrupdate)
-        return
-    thew = max([n.width for n in narrations])
-    theh = NARRDELTAY
-    for nar in narrations[:]:
-        alpha = 1 - (time() - nar.birth) / NARRDISAPPEAR
-        if alpha < 0.001:
-            narrations.remove(nar)
-            nar.destroy()
-        else:
-            nar.attributes("-alpha", alpha)
-    for nar in narrations:
-        nar.geometry(f"{thew}x{nar.height}-0-{theh}")
-        theh += nar.height
-    tk.after(10, narrupdate)
-
-def narradd(info: str):
-    nar = Narration(info)
-    #while nar in narrations:
-    #    narrations.remove(nar)
-    narrations.insert(0, nar)
-    """
-    #if len(narrations) >= NARRMAX:
-    #    narrations.pop(-1).destroy()""""""
-
-class FocusToplevel(Toplevel):
-    def __init__(self, *args, **kw):
-        Toplevel.__init__(self, *args, **kw)
-        self.focus_set()
-
-class EditWindow(FocusToplevel):
+class EditWindow(Toplevel):
     def __init__(self, lib: AgDir):
-        self.lib = lib
-        FocusToplevel.__init__(self)
+        self.lib = CopyObj(lib)
+        Toplevel.__init__(self)
         self.title("Spinner")
         self.transient(top)
         self.geometry(f"{EDITORW}x{EDITORH}+{top.winfo_x()}+{top.winfo_y()}")
+        self.focus_set()
         self.pathf = Frame(self)
         Button(self.pathf, text="<", command=self.return_).pack(side=LEFT, **PAD)
         self.ety = Entry(self.pathf, font=EDITORFONT)
@@ -137,15 +52,18 @@ class EditWindow(FocusToplevel):
         Button(self.pathf, text="->", command=self.gobyety).pack(side=LEFT, **PAD)
         self.pathf.pack(fill=X)
         self.tvf = Frame(self)
-        self.tv = Treeview(self.tvf, show="headings", selectmode="browse", columns=(0, 1, 2), )
-        self.tv.heading(0, text="名称")
-        self.tv.heading(1, text="类型")
-        self.tv.heading(2, text="值")
+        self.tv = Treeview(self.tvf, show="tree headings", selectmode="browse", columns=(0, 1))
+        self.tv.heading("#0", text="名称")
+        self.tv.heading(0, text="类型")
+        self.tv.heading(1, text="值")
         self.tv.tag_configure("oushu", background=TREECOLORODD, font=EDITORFONT)
         self.tv.tag_configure("jishu", background=TREECOLOREVEN, font=EDITORFONT)
-        self.tv.bind("<1>", lambda e: self.tv.selection_set(self.tv.identify_row(e.y)))
-        self.tv.bind("<3>", self.right)
-        self.tv.bind("<Double-1>", self.open)
+
+        sel_er = lambda e: self.tv.selection_set(self.tv.identify_row(e.y))
+        self.tv.bind("<1>", sel_er)
+        self.tv.bind("<3>", lambda e: (self.tv.focus_set(), self.right(e)))
+        self.tv.bind("<Double-1>", lambda e: (sel_er(e), self.open(e)))
+
         self.tv.grid(row=0, column=0, sticky=NSEW)
         self.vbar = Scrollbar(self.tvf, command=self.tv.yview, orient=VERTICAL)
         self.vbar.grid(row=0, column=1, sticky=NS)
@@ -155,26 +73,45 @@ class EditWindow(FocusToplevel):
         self.tvf.pack(fill=BOTH, expand=1, **PAD)
         Button(self, text="保存", command=self.save).pack(anchor=E, **PAD)
         self.goto("")
-    
-    def gethelp(self):
-        for k, v in helpdict.items():
-            path = self.selecting() if self.tv.selection() else self.curr
-            if k == path:
-                showinfo("Spinner", f"关于{path}的帮助：\n    {v}", parent=self)
-                break
+        self.already_saved = True
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        if self.already_saved:
+            self.destroy()
         else:
-            showinfo("Spinner", "未找到对应的帮助文档", parent=self)
+            answ = askokcancel("Spinner", "有未保存的更改，确定要关闭吗？")
+            if answ:
+                self.destroy()
 
     def goto(self, path):
         i = 0
         self.tv.delete(*self.tv.get_children())
         for x in sorted(self.lib.EnumDirs(path)):
-            self.tv.insert("", END, values=(x, "数据夹", "-"), iid=Join(path, x), tags=("jishu" if (i // 2)*2 !=i else "oushu"))
+            self.tv.insert(
+                "",
+                END,
+                text=x,
+                values=("数据夹", "-"),
+                iid=Join(path, x),
+                tags=("jishu" if (i // 2) * 2 != i else "oushu"),
+                image=TYPE_ICONS["dir"]
+            )
             i += 1
+        
         for x in sorted(self.lib.EnumFiles(path)):
             val = self.lib.QueryValue(Join(path, x))
-            self.tv.insert("", END, values=(x, gettypename(val), repr(val)), iid=Join(path, x), tags=("jishu" if (i // 2)*2 !=i else "oushu"))
+            self.tv.insert(
+                "",
+                END,
+                text=x,
+                values=(gettypename(val), repr(val)),
+                iid=Join(path, x),
+                tags=("jishu" if (i // 2) * 2 != i else "oushu"),
+                image=TYPE_ICONS.get(type(val).__name__, TYPE_ICONS["other"])
+            )
             i += 1
+        
         self.ety.delete(0, END)
         self.ety.insert(0, path)
         self.curr = path
@@ -186,32 +123,48 @@ class EditWindow(FocusToplevel):
     def return_(self):
         self.goto(SplitBy(self.curr, -1)[0])
     
-    def refresh_tv(self):
+    def refresh_tv(self, see=None):
         self.goto(self.curr)
-        #tree_color(self.tv)
-        #self.tv.update()
+        if see:
+            self.tv.selection_set(see)
+            self.tv.see(see)
 
     def selecting(self):
-        return self.tv.selection()[0]
+        s = self.tv.selection()
+        if s:
+            return s[0]
+        else:
+            return None
+
+    def flag_changed(self):
+        self.already_saved = False
     
     def save(self):
         SaveAgFileName(self.lib, "config.aglib")
+        self.already_saved = True
+        showinfo("Spinner", "保存成功")
+        global cnflib
+        cnflib = CopyObj(self.lib)
     
     def open(self, *e):
         "打开/编辑"
         sel = self.selecting()
+        if sel is None:
+            return
         if self.lib.IsDir(sel):
             self.goto(sel)
             return
-        #res = askstring("Spinner", "新值：", initialvalue=repr(self.lib.QueryValue(sel)), parent=self)
         flag, res = ValueDialog.askvalue(self, self.lib.QueryValue(sel))
         if flag:
             self.lib.SetValue(sel, res)
-            self.refresh_tv()
+            self.flag_changed()
+            self.refresh_tv(sel)
     
     def rename(self):
         "重命名"
         sel = self.selecting()
+        if sel is None:
+            return
         x, y, w, h = self.tv.bbox(sel, 0)
         e = Entry(self.tv, font=EDITORFONT)
         e.insert(0, SplitBy(sel, -1)[-1])
@@ -222,8 +175,12 @@ class EditWindow(FocusToplevel):
             res = e.get()
             e.destroy()
             if res:
-                self.lib.Rename(sel, res)
-                self.refresh_tv()
+                try:
+                    self.lib.Rename(sel, res)
+                    self.flag_changed()
+                    self.refresh_tv(Join(SplitBy(sel, -1)[0], res))
+                except:
+                    pass
             flag.set(True)
 
         e.bind("<FocusOut>", rename_confirm)
@@ -231,55 +188,76 @@ class EditWindow(FocusToplevel):
         e.place(x=x, y=y, width=w, height=h)
         #res = askstring("Spinner", "新名称：", parent=self, initialvalue=SplitBy(sel, -1)[-1])
         self.wait_variable(flag)
+
     def remove(self):
         "删除"
         sel = self.selecting()
+        if sel is None:
+            return
         if askokcancel("Spinner", "是否删除？", parent=self):
             self.lib.Remove(sel)
+            self.flag_changed()
             self.refresh_tv()
     
     def import_(self):
         "从另一库中导入"
         sel = self.selecting()
+        if sel is None:
+            return
         fn = askopenfilename(parent=self)
         if fn:
             try:
                 lib2 = LoadAgFileName(fn)
                 self.lib.Remove(sel)
                 self.lib.Attach(lib2.GetSubDirCopy(sel), sel)
-                self.refresh_tv()
+                self.flag_changed()
+                # self.refresh_tv()
             except:
                 showerror("Spinner", "所选库不含等位数据夹")
 
     def cleardir(self):
         "清空所选数据夹"
         sel = self.selecting()
+        if sel is None:
+            return
         if askokcancel("Spinner", "是否清空？", parent=self):
             for i in self.lib.EnumAll(sel):
                 self.lib.Remove(Join(sel, i))
-            self.refresh_tv()
+            self.flag_changed()
+            # self.refresh_tv()
 
     def newdir(self):
         "新建数据夹"
-        self.lib.MkDir(self.genpath(self.curr, "新数据夹"))
-        self.refresh_tv()
+        newp = self.genpath(self.curr, "新数据夹")
+        self.lib.MkDir(newp)
+        self.flag_changed()
+        self.refresh_tv(newp)
+        self.rename()
 
     def newfile(self):
         "新建数据"
-        self.lib.SetValue(self.genpath(self.curr, "新数据"), None)
-        self.refresh_tv()
+        newp = self.genpath(self.curr, "新数据")
+        self.lib.SetValue(newp, None)
+        self.flag_changed()
+        self.refresh_tv(newp)
+        self.rename()
     
     def importbytesfromfile(self):
         "导入文件"
         sel = self.selecting()
+        if sel is None:
+            return
         file = askopenfilename(parent=self)
         with open(file, "rb") as f:
             self.lib.SetValue(sel, f.read())
+            self.flag_changed()
         self.refresh_tv()
     
     def exportbytes(self):
         "导出为"
         sel = self.selecting()
+        if sel is None:
+            return
         file = asksaveasfilename(parent=self)
         with open(file, "wb") as f:
             f.write(self.lib.QueryValue(sel))
@@ -287,6 +265,8 @@ class EditWindow(FocusToplevel):
     def showasimg(self):
         "作为图片查看"
         sel = self.selecting()
+        if sel is None:
+            return
         img = Image.open(BytesIO(self.lib.QueryValue(sel))).convert("RGB")
         start_new_thread(img.show, ())
     
@@ -306,22 +286,20 @@ class EditWindow(FocusToplevel):
         self.tv.selection_set(self.tv.identify_row(e.y))
         try:
             sel = self.selecting()
+            if sel is None:
+                raise Exception
             items = [self.open, self.rename, self.newdir, self.newfile, self.remove]
             if self.lib.IsDir(sel):
                 items.extend([self.import_, self.cleardir])
             elif isinstance(self.lib.QueryValue(sel), bytes):
-                items.extend([self.showasimg, self.exportbytes, self.importbytesfromfile])
+                items.extend([self.showasimg, self.importbytesfromfile, self.exportbytes])
         except:
             items = [self.newdir, self.newfile]
         menu = Menu(self, tearoff=0)
         for i in items:
             menu.add_command(label=i.__doc__, command=i)
         menu.add_separator()
-        # menu.add_command(label="帮助", command=self.gethelp)
         menu.post(e.x_root, e.y_root)
-
-def gettypename(dat) -> str:
-    return TYPENAMES.get(type(dat).__name__, "其他")
 
 def name2type(name):
     for k, v in TYPENAMES.items():
@@ -329,12 +307,14 @@ def name2type(name):
             return eval(k)
     else:
         return None
-class ValueDialog(FocusToplevel):
+
+class ValueDialog(Toplevel):
     def __init__(self, parent: Toplevel, val):
-        FocusToplevel.__init__(self, parent)
+        Toplevel.__init__(self, parent)
         self.parent = parent
         self.transient(parent)
         self.geometry(f"{DIALOGW}x{DIALOGH}+{parent.winfo_x()}+{parent.winfo_y()}")
+        self.focus_set()
         self.title("Spinner")
         self.typv = StringVar(value=gettypename(val))
         valf = Frame(self)
@@ -421,106 +401,87 @@ class ValueDialog(FocusToplevel):
             self.othrtxt.delete(0.0, END)
             self.othrtxt.insert(0.0, pformat(val))
 
-cnflib = LoadAgFileName("config.aglib")
-assetslib = cnflib.GetSubDirCopy("HKEY_ASSETS")
-texlib = assetslib.GetSubDirCopy("textures")
-iconlib = assetslib.GetSubDirCopy("icons")
-
-def loadpimg(lib: AgDir, name, size: int):
-    return ImageTk.PhotoImage(Image.open(BytesIO(lib.QueryValue(name))).crop((0, 0, 16, 16)).resize((size, size)))
-
-SYSCNF = cnflib.GetSubDirCopy("HKEY_SYSTEM")
-NUMDAT = cnflib.GetSubDirCopy("HKEY_NUM_DATA")
-COMBINES = cnflib.GetSubDirCopy("HKEY_COMBINES")
-NAMEDICT = cnflib.GetSubDirCopy("HKEY_NAMES")
-TOOLS = cnflib.GetSubDirCopy("HKEY_TOOLS")
-VOICETIP = cnflib.GetSubDirCopy("HKEY_VOICE_TIP")
-EDTRLIB = cnflib.GetSubDirCopy("HKEY_EDITOR")
-
-SCALE = SYSCNF.QueryValue("scale")
-MEMBERS = list(range(SYSCNF.QueryValue("min"), SYSCNF.QueryValue("max") + 1))
-MEMBERS.extend(SYSCNF.QueryValue("blackNames") * SYSCNF.QueryValue("blackWeight"))
-
-for x in SYSCNF.QueryValue("whiteNames"):
-    MEMBERS.remove(x)
-
-PAD = SYSCNF.QueryValue("pad")
-WW, WH = int(256 * SCALE), int(208 * SCALE)
-SW, SH = tk.winfo_screenwidth(), tk.winfo_screenheight()
-
-REPEATTIMES = SYSCNF.QueryValue("repeatTimes")
-ALPHA = SYSCNF.QueryValue("alpha")
-DEFAULTTEXTURE = SYSCNF.QueryValue("defaultTexture")
-DELTAY = SYSCNF.QueryValue("deltaY")
-VOICEPROMPT = SYSCNF.QueryValue("voicePrompt")
-DOTRICKS = SYSCNF.QueryValue("doTricks")
-VOICETIPMARK = SYSCNF.QueryValue("voiceTipMark")
-LOADWINSIZE = SYSCNF.QueryValue("loadWinSize")
-
-EDITORW, EDITORH = EDTRLIB.QueryValue("editorWH")
-DIALOGW, DIALOGH = EDTRLIB.QueryValue("dialogWH")
-DEFAULTSTR = EDTRLIB.QueryValue("defaultStr")
-DEFAULTINT = EDTRLIB.QueryValue("defaultInt")
-DEFAULTFLOAT = EDTRLIB.QueryValue("defaultFloat")
-DEFAULTBOOL = EDTRLIB.QueryValue("defaultBool")
-DEFAULTOTHR = EDTRLIB.QueryValue("defaultOthr")
-EDITORFONT = EDTRLIB.QueryValue("editorFont")
-INTINCREMENT = EDTRLIB.QueryValue("intIncrement")
-FLOATINCREMENT = EDTRLIB.QueryValue("floatIncrement")
-VALUEMIN = EDTRLIB.QueryValue("valueMin")
-VALUEMAX = EDTRLIB.QueryValue("valueMax")
-TREECOLORODD = EDTRLIB.QueryValue("treeColorOdd")
-TREECOLOREVEN = EDTRLIB.QueryValue("treeColorEven")
-
-NARRDISAPPEAR = 3
-NARRDELTAY = 50
-NARRMAX = 4
-
 eng.setProperty("volume", SYSCNF.QueryValue("aiVolume"))
 eng.setProperty("rate", SYSCNF.QueryValue("aiRate"))
-IMGS = {}
 
-files = texlib.EnumFiles()
-fcount = len(files)
-tk.title(VERSION)
-tk.geometry(f"{LOADWINSIZE}x{LOADWINSIZE}+{int(SW/2 - LOADWINSIZE/2)}+{int(SH/2 - LOADWINSIZE/2)}")
-c = Canvas(tk, highlightthickness=0)
-c.place(x=0, y=0, relwidth=1, relheight=1)
-rd, rdo = loadpimg(iconlib, "redstone_lamp.png", LOADWINSIZE), loadpimg(iconlib, "redstone_lamp_on.png", LOADWINSIZE)
-c.create_image(0, 0, image=rd, anchor=NW)
-l = Label(tk, anchor=NW, image=rdo, width=0, highlightthickness=0)
-w = c.create_window(-2, -2, anchor=NW, window=l)
-for ind, fn in enumerate(files):
-    if fn.endswith(".png"):
-        IMGS[splitext(fn)[0]] = loadpimg(texlib, fn, int(16*SCALE))
-        tk.update()
-    l.config(width=ind/fcount*LOADWINSIZE)
-for x in range(100):
-    tk.attributes("-alpha", tk.attributes("-alpha") - 0.01)
+IMGS = {}
+TYPE_ICONS = {}
+
+def pre_load_assets():
+    files = texlib.EnumFiles()
+    fcount = len(files)
+
+    tk.title(VERSION)
+    tk.geometry(f"{LOADWINSIZE}x{LOADWINSIZE}+{int(SW/2 - LOADWINSIZE/2)}+{int(SH/2 - LOADWINSIZE/2)}")
+    # tk.update()
+    tk.style.map("Treeview", rowheight=[("!disabled", SPACING)])
+    
+    c = Canvas(tk)
+    c.place(x=0, y=0, relwidth=1, relheight=1)
+    rd_off, rd_on = loadpimg(iconlib, "loading_off.png", LOADWINSIZE), loadpimg(iconlib, "loading_on.png", LOADWINSIZE)
+    c.create_image(0, 0, image=rd_off, anchor=NW)
+
+    l = TLabel(c, anchor=NW, image=rd_on)
+    l.config(width=1)
+
+    c.create_window(-2, -2, anchor=NW, window=l)
     tk.update()
-    sleep(0.005)
-tk.overrideredirect(1)
+    tk.update_idletasks()
+
+    eng.say("")
+    eng.runAndWait()
+
+    for ind, fn in enumerate(files):
+        if fn.endswith(".png"):
+            IMGS[splitext(fn)[0]] = loadpimg(texlib, fn, int(16*SCALE))
+            tk.update()
+            tk.update_idletasks()
+        
+        l.config(width=ind / fcount * LOADWINSIZE)
+
+    for fn in iconlib.EnumFiles():
+        if fn.startswith("type_"):
+            if iconlib.QueryValue(fn): # TODO 图标补齐可删
+                img = Image.open(BytesIO(iconlib.QueryValue(fn))).resize((SPACING, SPACING))
+                TYPE_ICONS[fn.removeprefix("type_").removesuffix(".png")] = ImageTk.PhotoImage(img)
+
+    for _ in range(100):
+        tk.attributes("-alpha", tk.attributes("-alpha") - 0.01)
+        tk.update()
+        sleep(0.002)
+
+    tk.overrideredirect(1)
+    tk.geometry("+10000+10000")
+
+pre_load_assets()
+
 current = StringVar(value=DEFAULTTEXTURE)
 define = Variable()
 
 def getimgs():
     if current.get() != "__define__":
-        on, off = COMBINES.QueryValue(current.get())
+        on, off = COMBINES.TryQueryValue(current.get()) or COMBINES.TryQueryValue(COMBINES.EnumFiles()[0])
     else:
         on, off = define.get()
     return IMGS[on], IMGS[off]
 
-tk.geometry("+10000+10000")
-del c, l, w
-top = Toplevel(tk)
-top.title(VERSION)
-top.transient(tk)
-#tk.iconphoto(1, getimgs()[1])
-cvs = Canvas(top, highlightthickness=0)
-cvs.place(relx=0, rely=0, relwidth=1, relheight=1)
+def set_top_geometry(geo, hidding=False):
+    old_geo.set(now_geo.get()) if not hidding else old_geo.set("hidden")
+    now_geo.set(geo)
+    top.geometry(geo)
 
 now_geo = StringVar()
 old_geo = StringVar()
+
+top = Toplevel(tk)
+top.title(VERSION)
+set_top_geometry(f"{WW}x{WH}+{int(SW/2 - WW/2)}+{int(SH/2 - WH/2)+DELTAY}")
+top.attributes("-alpha", 0)
+top.transient(tk)
+
+cvs = Canvas(top)
+cvs.place(relx=0, rely=0, relwidth=1, relheight=1)
+
 nextone = IntVar(value=-1)
 
 def read(msg):
@@ -529,17 +490,10 @@ def read(msg):
 def _read(msg):
     try:
         eng.endLoop()
-    except Exception:pass
+    except Exception:
+        pass
     eng.say(msg)
     eng.runAndWait()
-
-def set_top_geometry(geo, hidding=False):
-    old_geo.set(now_geo.get()) if not hidding else old_geo.set("hidden")
-    now_geo.set(geo)
-    top.geometry(geo)
-
-set_top_geometry(f"{WW}x{WH}+{int(SW/2 - WW/2)}+{int(SH/2 - WH/2)+DELTAY}")
-top.attributes("-alpha", 0)
 
 def randtexture(*e):
     define.set(textrrng.choices(list(IMGS.keys()), k=2))
@@ -597,8 +551,8 @@ def init():
     #tk.iconphoto(1, off)
 
 rolling = BooleanVar(value=False)
+
 def update(_):
-    on, off = getimgs()
     if now_geo.get() == "hidden":
         winclose()
     if rolling.get() == True:
@@ -606,48 +560,31 @@ def update(_):
         return
     t = 0
     rolling.set(True)
-    #tk.iconphoto(1, on)
     while True:
         t += 1
         shownum(flashrng.choice(MEMBERS))
         if t == REPEATTIMES or rolling.get() == False:
             break
-    #tk.iconphoto(1, off)
+
     n = nextone.get()
     if n != -1:
-        shownum(n)
-        read(VOICEPROMPT.format(num=n, name=VOICETIP.TryQueryValue(str(n), "") or NAMEDICT.TryQueryValue(str(n), "")))
         nextone.set(-1)
     else:
-        x = namesrng.choice(MEMBERS)
-        shownum(x)
-        read(VOICEPROMPT.format(num=x, name=VOICETIP.TryQueryValue(str(x), "") or NAMEDICT.TryQueryValue(str(x), "")))
+        n = namesrng.choice(MEMBERS)
+
+    shownum(n)
+    read(VOICEPROMPT.format(num=n, name=VOICETIP.TryQueryValue(str(n), "") or NAMEDICT.TryQueryValue(str(n), "")))
 
 def focus():
     top.after(3050, focus)
-    #top.focus_set()
-    """if now_geo.get() != "hidden":
-        windll.user32.SetForegroundWindow(top.winfo_id())
-    else:
-        top.focus_set()"""
     tk.attributes("-topmost", 1)
-
-def start_systm(t):
-    start_new_thread(system, (t,))
-
-def start_exe(t):
-    start_new_thread(startfile, (t,))
-
-def start_py(t):
-    start_new_thread(exec, (t,))
-
-def start_url(t):
-    start_new_thread(open_new, (t,))
 
 menubar = Menu(top)
 comb = Menu(menubar, tearoff=0)
-for k in COMBINES.EnumFiles():
-    comb.add_radiobutton(label=k, value=k, command=init, variable=current)
+
+for k in sorted(COMBINES.EnumFiles(), key=lambda x: int(x.split(" ")[0])):
+    comb.add_radiobutton(label=k.split(" ", 1)[1], value=k, command=init, variable=current)
+
 comb.add_separator()
 comb.add_radiobutton(label="从素材库中随机...", value="__define__", command=randtexture, variable=current)
 menubar.add_cascade(label="贴图", menu=comb)
@@ -663,10 +600,20 @@ def restart():
     execl(executable, executable, __file__)
 
 def show_log():
-    """==Spinner 1.4 更新==
-    1. 去除了模组加载器
-    2. 分离随机数生成器
-    3. 修改了置顶保持的机制"""
+    """== Spinner 1.5 - snapshot 1 更新 ==
+    
+    1. 采用新的窗口库
+    2. 现在配置保存成功会弹窗提示
+    3. 引入模组加载器“Spindle Loader”
+    4. 去除了工具菜单，因为模组通常能更好地驱动这类外部功能
+    5. 现在配置编辑器未保存而退出后，重新进入时不会保留之前的更改
+    6. 现在程序加载时，语音合成器会朗读空字符串以进行预加载
+    7. 修复了加载进度在某些系统上始终为满的漏洞
+    8. 修复了配置编辑器连续双击同一位置时会报错的漏洞
+    9. 修复了配置编辑器重命名不做任何更改时会报错的漏洞
+    10. 现在贴图数据夹中的数据名称将以第一空格前的数字为排序依据，并且该数将不会显示
+    11. 现在如果 defaultTexture 的值不在 HKEY_COMBINES 中，程序将使用所有贴图组合中的第一个，而不是报错退出
+    12. 现在新建数据（夹）时，将自动打开重命名框"""
     showinfo("Spinner", show_log.__doc__, parent=top)
 
 def contributors():
@@ -676,11 +623,14 @@ def contributors():
 tric = Menu(menubar, tearoff=0)
 subs = {}
 mems = sorted(list(set(MEMBERS)))
+
 for x in range(0, max(mems), 10):
-    subs[f"{x}-{x+10}"] = sorted([m for m in mems if m<=x+10 and m >=x])
+    subs[f"{x}-{x + 10}"] = sorted([m for m in mems if m <= x + 10 and m >= x])
+
 for labl, content in subs.items():
     if content:
         add_trick_items(tric, labl, content)
+
 tric.add_separator()
 tric.add_command(label="获取输入...", command=lambda: nextone.set(askinteger("Spinner", "输入一个正整数", parent=top)))
 
@@ -690,37 +640,53 @@ else:
     menubar.add_cascade(label=f"恶搞（已禁用）", menu=Menu(menubar, tearoff=0))
 
 edit = Menu(menubar, tearoff=0)
-edit.add_command(label="打开编辑器", command=lambda:EditWindow(cnflib))
+edit.add_command(label="打开编辑器", command=lambda: EditWindow(cnflib))
 edit.add_command(label="重新启动", command=restart)
-edit.add_command(label="退出", command=tk.destroy)
+edit.add_command(label="退出", command=top.destroy)
 edit.add_separator()
 edit.add_command(label="更新日志", command=show_log)
 edit.add_command(label="制作者名单", command=contributors)
 menubar.add_cascade(label="配置", menu=edit)
 
-too = Menu(menubar, tearoff=0)
-def genmenu(pmenu: Menu, path: str):
-    lb = TOOLS.TryQueryValue(Join(path, "label"), SplitBy(path, -1)[-1])
-    cmd = TOOLS.TryQueryValue(Join(path, "command"), int)
-    cmd_t = TOOLS.TryQueryValue(Join(path, "commandType"), None)
-    if not cmd_t:
-        pmenu.add_command(label=lb, state=DISABLED)
-    elif cmd_t == "subCommands":
-        m = Menu(pmenu, tearoff=0)
-        for x in sorted(TOOLS.EnumDirs(path)):
-            genmenu(m, Join(path, x))
-        pmenu.add_cascade(menu=m, label=lb)
-    elif cmd_t == "system":
-        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_systm(cmd))
-    elif cmd_t == "startFile":
-        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_exe(cmd))
-    elif cmd_t == "pyExec":
-        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_py(cmd))
-    elif cmd_t == "openUrl":
-        pmenu.add_command(label=lb, command=lambda cmd=cmd:start_url(cmd))
-for x in sorted(TOOLS.EnumDirs()):
-    genmenu(too, x)
-menubar.add_cascade(label="工具", menu=too)
+def var_getter(name):
+    return globals()[name]
+
+def var_setter(name, val):
+    globals()[name] = val
+
+modm = Menu(menubar, tearoff=0)
+menubar.add_cascade(label="模组", menu=modm) # 必须在模组加载前添加
+
+spindle.var_getter = var_getter
+spindle.var_setter = var_setter
+ALL_MODS = spindle.load_all_mods()
+spindle.call_integrates()
+
+if ALL_MODS:
+    icon_pimg = ImageTk.PhotoImage(Image.open(BytesIO(iconlib.QueryValue("win_icon_modded.png"))))
+    top.title(f"{VERSION} - Spindle Loader")
+else:
+    icon_pimg = ImageTk.PhotoImage(Image.open(BytesIO(iconlib.QueryValue("win_icon.png"))))
+
+top.iconphoto(True, icon_pimg)
+
+if spindle.mod_has_made_cnf:
+    SaveAgFileName(cnflib, "config.aglib")
+
+for modobj in ALL_MODS:
+    modm.add_command(
+        label=f"  {modobj.name}",
+        command=lambda m=modobj: spindle.ModDescDlg(top, m),
+        image=modobj.icon,
+        compound=LEFT,
+        accelerator=modobj.version
+    )
+modm.add_separator()
+
+mod_ctrl = Menu(modm, tearoff=0)
+mod_ctrl.add_command(label="禁用/启用 管理", command=lambda: spindle.DisableMgr())
+
+modm.add_cascade(label=f"    {len(ALL_MODS)} 个 Mod 已加载", menu=mod_ctrl)
 
 top.config(menu=menubar)
 
@@ -730,7 +696,6 @@ top.after(0, focus)
 top.attributes("-topmost", 1)
 top.resizable(0, 0)
 top.deiconify()
-#windll.user32.SetFocus(top.winfo_id())
 top.focus_force()
 
 for t in range(100):

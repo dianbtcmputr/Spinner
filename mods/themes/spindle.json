@@ -1,0 +1,11 @@
+{
+    "displayName": "Themes",
+    "modId": "themes",
+    "dependencies": ["menuapi"],
+    "version": "1.0",
+    "mainFile": "themes.py",
+    "mainEntry": "main",
+    "description": "Themes 皮肤包\n　　允许切换界面风格主题（在“配置 → 窗口主题”中）。",
+    "mainInit": "init",
+    "mainIntegrate": "integrate"
+}

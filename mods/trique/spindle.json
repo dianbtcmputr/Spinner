@@ -1,0 +1,9 @@
+{
+    "displayName": "Trique",
+    "modId": "trique",
+    "dependencies": [],
+    "version": "1.0",
+    "mainFile": "trique.py",
+    "mainEntry": "main",
+    "description": "Trique 恶搞列表\n　　若恶搞功能启用，恶搞菜单下的“获取输入...”将变为“恶搞列表...”，可以在其中按顺序指定多个待点学号。"
+}

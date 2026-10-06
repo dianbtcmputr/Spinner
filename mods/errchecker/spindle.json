@@ -1,0 +1,9 @@
+{
+    "displayName": "Error Checker",
+    "modId": "errchecker",
+    "dependencies": [],
+    "version": "1.0",
+    "mainFile": "errchecker.py",
+    "mainEntry": "main",
+    "description": "Error Checker 错误捕获器\n　　将程序后台异常输出到弹窗对话框。"
+}

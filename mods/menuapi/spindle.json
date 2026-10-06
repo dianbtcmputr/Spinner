@@ -1,0 +1,9 @@
+{
+    "displayName": "Menu API",
+    "modId": "menuapi",
+    "dependencies": [],
+    "version": "1.0",
+    "mainFile": "menuapi.py",
+    "mainEntry": "main",
+    "description": "Menu API 菜单库\n　　一些涉及菜单操作的 Mod 的支持库"
+}
